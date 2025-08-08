@@ -1,0 +1,78 @@
+{
+  "codes": {
+    "LODGE2024": {
+      "uses": 0,
+      "maxUses": 50,
+      "active": true,
+      "createdBy": "admin"
+    },
+    "SUMMER2025": {
+      "uses": 1,
+      "maxUses": 80,
+      "active": true,
+      "createdBy": "7930798268",
+      "createdAt": "2025-08-06T17:50:08.980Z"
+    }
+  },
+  "pendingRequests": {},
+  "approvedUsers": [
+    "7930798268",
+    "6792901572",
+    "8193238094",
+    "517884589",
+    "1172076989",
+    "6372547857"
+  ],
+  "userPreferences": {
+    "517884589": {
+      "language": "en"
+    },
+    "1172076989": {
+      "language": "en"
+    },
+    "7930798268": {
+      "language": "en"
+    },
+    "6372547857": {
+      "language": "en"
+    },
+    "7923687276": {
+      "language": "en"
+    }
+  },
+  "profileHandlerId": "6792901572",
+  "profileReferrals": {
+    "PROF-GCTX-UPNY": {
+      "userId": "7930798268",
+      "username": "CH1_FU",
+      "firstName": "CHI",
+      "lastName": "FU",
+      "timestamp": "2025-08-07T22:30:03.206Z",
+      "status": "pending"
+    },
+    "PROF-HMXN-RTEB": {
+      "userId": "7930798268",
+      "username": "CH1_FU",
+      "firstName": "CHI",
+      "lastName": "FU",
+      "timestamp": "2025-08-07T23:46:56.817Z",
+      "status": "pending"
+    },
+    "PROF-REHR-RCIV": {
+      "userId": "7930798268",
+      "username": "CH1_FU",
+      "firstName": "CHI",
+      "lastName": "FU",
+      "timestamp": "2025-08-08T00:01:28.359Z",
+      "status": "pending"
+    },
+    "PROF-HJQX-CMHL": {
+      "userId": "7930798268",
+      "username": "CH1_FU",
+      "firstName": "CHI",
+      "lastName": "FU",
+      "timestamp": "2025-08-08T00:17:10.492Z",
+      "status": "pending"
+    }
+  }
+}

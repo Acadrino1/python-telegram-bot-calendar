@@ -1,0 +1,15 @@
+Send this to BotFather to set up your bot commands:
+
+/setcommands
+
+Then paste:
+
+start - Start the bot and see welcome message
+book - Book a new appointment
+myappointments - View your upcoming appointments
+cancel - Cancel an appointment (use with ID)
+reschedule - Reschedule an appointment
+help - Show help and tips
+profile - View or update your profile
+availability - Set your availability (providers only)
+schedule - View your schedule (providers only)

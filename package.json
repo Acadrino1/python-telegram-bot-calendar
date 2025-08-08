@@ -1,0 +1,80 @@
+{
+  "name": "appointment-scheduler",
+  "version": "1.0.0",
+  "description": "Complete appointment scheduling and management system",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "start:bot": "node src/bot/bot.js",
+    "start:all": "npm run start & npm run start:bot",
+    "dev": "nodemon src/index.js",
+    "dev:bot": "nodemon src/bot/bot.js",
+    "test": "jest",
+    "test:integration": "jest --testPathPattern=tests/integration",
+    "test:coverage": "jest --coverage",
+    "migrate": "knex migrate:latest",
+    "seed": "knex seed:run",
+    "build": "tsc",
+    "lint": "eslint src tests",
+    "format": "prettier --write src tests",
+    "validate-support": "node scripts/validate-support-config.js",
+    "setup-support": "node scripts/validate-support-config.js"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^6.8.1",
+    "helmet": "^7.0.0",
+    "joi": "^17.9.2",
+    "jsonwebtoken": "^9.0.2",
+    "knex": "^2.5.1",
+    "moment-timezone": "^0.5.43",
+    "mysql2": "^3.6.1",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.4",
+    "objection": "^3.1.5",
+    "telegraf": "^4.16.3",
+    "telegraf-calendar-telegram": "^2.0.2",
+    "twilio": "^4.15.0",
+    "uuid": "^9.0.0",
+    "winston": "^3.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.5.0",
+    "@typescript-eslint/eslint-plugin": "^6.4.0",
+    "@typescript-eslint/parser": "^6.4.0",
+    "eslint": "^8.47.0",
+    "jest": "^29.6.2",
+    "nodemon": "^3.0.1",
+    "prettier": "^3.0.1",
+    "supertest": "^6.3.3",
+    "typescript": "^5.1.6"
+  },
+  "keywords": [
+    "appointment",
+    "scheduling",
+    "booking",
+    "calendar",
+    "management",
+    "telegram-bot",
+    "rest-api",
+    "mysql",
+    "nodejs"
+  ],
+  "author": "Swarm Integration Engineer",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/appointment-scheduler.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/appointment-scheduler/issues"
+  },
+  "homepage": "https://github.com/yourusername/appointment-scheduler#readme",
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  }
+}

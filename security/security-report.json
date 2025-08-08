@@ -1,0 +1,29 @@
+{
+  "report_id": "087532d8-a723-4eed-9c74-514c2c1d5a5e",
+  "generated_at": "2025-08-08T00:33:49.424Z",
+  "vulnerabilities_identified": 5,
+  "vulnerabilities": {
+    "exposedBotToken": "8124276494:AAEXy61BMBQcrz6TCCNHRI3_4d6fbXERy8M",
+    "unauthorizedAdminId": "7930798268",
+    "missingSupport": "SUPPORT_GROUP_ID not configured",
+    "weakRateLimit": "Insufficient rate limiting",
+    "hardcodedCredentials": "Credentials hardcoded in source"
+  },
+  "recommendations": [
+    "Replace exposed bot token immediately",
+    "Remove unauthorized admin ID (7930798268)",
+    "Configure SUPPORT_GROUP_ID for live chat",
+    "Implement stricter rate limiting",
+    "Use environment variables for all secrets",
+    "Enable security headers and CSRF protection",
+    "Implement API key authentication",
+    "Set up monitoring and alerting",
+    "Regular security audits and updates",
+    "Database cleanup to remove contaminated data"
+  ],
+  "remediation_scripts": [
+    "database-cleanup.sql",
+    "rate-limiting-middleware.js",
+    ".env.secure configuration"
+  ]
+}
