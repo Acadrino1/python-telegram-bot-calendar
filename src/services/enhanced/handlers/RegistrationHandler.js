@@ -514,6 +514,7 @@ class RegistrationHandler {
           inline_keyboard: [
             [{text: '🔍 Check Payment', callback_data: `check_payment_${paymentData.id}`}],
             [{text: '🎟️ Redeem Coupon', callback_data: `redeem_coupon_${paymentData.id}`}],
+            [{text: '💱 Need Monero?', callback_data: 'support_get_monero'}],
             [{text: '← Back', callback_data: 'book'}]
           ]
         }

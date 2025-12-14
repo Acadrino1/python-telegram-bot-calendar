@@ -60,6 +60,9 @@ class SupportHandler {
         case 'support_ticket_status':
           return await this.showTicketStatusInfo(ctx);
 
+        case 'support_get_monero':
+          return await this.showGetMonero(ctx);
+
         case 'support_faq':
           return await this.showFAQ(ctx);
 
@@ -103,6 +106,7 @@ Choose an option below:`;
         inline_keyboard: [
           [{ text: '🎫 Create Ticket', callback_data: 'support_create_ticket' }],
           [{ text: '📋 My Tickets', callback_data: 'support_my_tickets' }],
+          [{ text: '💱 Get Monero', callback_data: 'support_get_monero' }],
           [{ text: '❓ FAQ', callback_data: 'support_faq' }],
           [{ text: '← Back to Menu', callback_data: 'main_menu' }]
         ]
@@ -212,6 +216,46 @@ Choose an option below:`;
         }
       }
     );
+    return true;
+  }
+
+  /**
+   * Show Get Monero help
+   */
+  async showGetMonero(ctx) {
+    const message = `
+💱 *Don't Have Monero?*
+
+Quick ways to get XMR:
+
+*1. ChangeNow* (changenow.io)
+   • Swap BTC/ETH/USDT → XMR
+   • No account needed
+   • Estimated time: 5-30 minutes
+
+*2. FixedFloat* (fixedfloat.com)
+   • Fixed or floating rates available
+   • Anonymous exchange
+   • Fast processing
+
+*3. LocalMonero* (localmonero.co)
+   • P2P exchange platform
+   • Cash/bank transfer options
+   • Privacy-focused
+
+💡 *Tip:* Use "fixed rate" options for predictable amounts
+
+⚠️ *Note:* After getting XMR, come back here to complete your payment.
+    `;
+
+    await ctx.editMessageText(message, {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '← Back to Support', callback_data: 'support_main' }]
+        ]
+      }
+    });
     return true;
   }
 
