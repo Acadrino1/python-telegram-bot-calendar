@@ -68,20 +68,42 @@ class BookingHandler {
     const existingCustomerServices = ['simcard_activation', 'technical_support', 'upgrade_device'];
 
     if (existingCustomerServices.includes(serviceType)) {
-      // Get all completed registrations for this user
+      // Get all PAID registrations for this user
       const Appointment = require('../../../models/Appointment');
       const User = require('../../../models/User');
+      const Service = require('../../../models/Service');
+      const { Model } = require('objection');
+      const knex = Model.knex();
       const userId = ctx.from?.id?.toString();
 
       // Find user by telegram_id
       const user = await User.query().where('telegram_id', userId).first();
 
-      const completedRegistrations = user ? await Appointment.query()
+      if (!user) {
+        await ctx.editMessageText(
+          `❌ Please register first with /start`,
+          {
+            reply_markup: {
+              inline_keyboard: [[{ text: '← Back to Services', callback_data: 'book' }]]
+            }
+          }
+        );
+        return true;
+      }
+
+      // Find new registration service
+      const newRegService = await Service.query()
+        .where('name', 'like', '%New Registration%')
+        .first();
+
+      // Get paid registrations - check payments table
+      const completedRegistrations = newRegService ? await Appointment.query()
         .where('client_id', user.id)
-        .where('status', 'completed')
+        .where('service_id', newRegService.id)
         .whereExists(
-          Appointment.relatedQuery('service')
-            .where('name', 'like', '%New Registration%')
+          knex('payments')
+            .whereRaw('payments.appointment_id = appointments.id')
+            .where('payments.status', 'confirmed')
         )
         .orderBy('appointment_datetime', 'desc') : [];
 
@@ -137,18 +159,9 @@ class BookingHandler {
       const customerButtons = [];
 
       for (const reg of registrations) {
-        let customerData = {};
-        try {
-          customerData = typeof reg.customer_data === 'string'
-            ? JSON.parse(reg.customer_data)
-            : reg.customer_data || {};
-        } catch (e) {
-          continue;
-        }
-
-        const firstName = customerData.first_name || customerData.firstName || '';
-        const lastName = customerData.last_name || customerData.lastName || '';
-        const phone = customerData.phone || customerData.phoneNumber || '';
+        const firstName = reg.customer_first_name || '';
+        const lastName = reg.customer_last_name || '';
+        const phone = reg.customer_phone || '';
 
         if (!firstName && !lastName) continue;
 
@@ -208,24 +221,22 @@ class BookingHandler {
         return true;
       }
 
-      let customerData = {};
-      try {
-        customerData = typeof registration.customer_data === 'string'
-          ? JSON.parse(registration.customer_data)
-          : registration.customer_data || {};
-      } catch (e) {
-        customerData = {};
-      }
+      // Use actual column fields
+      const customerData = {
+        firstName: registration.customer_first_name || '',
+        lastName: registration.customer_last_name || '',
+        phone: registration.customer_phone || '',
+        email: registration.customer_email || ''
+      };
 
       // Store customer data in session for booking
       ctx.session = ctx.session || {};
       ctx.session.booking = ctx.session.booking || {};
       ctx.session.booking.selectedCustomer = customerData;
       ctx.session.booking.selectedCustomerId = appointmentId;
+      ctx.session.customerInfo = customerData; // Also store in customerInfo for form compatibility
 
-      const firstName = customerData.first_name || customerData.firstName || '';
-      const lastName = customerData.last_name || customerData.lastName || '';
-      const customerName = `${firstName} ${lastName}`.trim() || 'Selected Customer';
+      const customerName = `${customerData.firstName} ${customerData.lastName}`.trim() || 'Selected Customer';
 
       // Show calendar for time selection
       await ctx.editMessageText(
