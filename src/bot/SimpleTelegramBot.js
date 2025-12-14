@@ -228,6 +228,13 @@ class SimpleTelegramBot {
       console.log('✅ Database defaults verified');
     } catch (error) {
       console.error('⚠️ Error checking database defaults:', error.message);
+      console.error('Stack:', error.stack);
+      console.error('Full error details:', {
+        message: error.message,
+        name: error.name,
+        code: error.code,
+        stack: error.stack
+      });
       // Don't throw - bot can still run, just booking might fail
     }
   }
