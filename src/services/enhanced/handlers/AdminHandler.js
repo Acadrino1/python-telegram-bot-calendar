@@ -2270,8 +2270,9 @@ class AdminHandler {
         `${urgencyText}\n\n` +
         `📱 Service: ${serviceName}\n` +
         `📅 Date: ${formattedDate}\n\n` +
-        `_Don't miss out! Book your slot now:_\n` +
-        `Use /start to get started 🚀`;
+        `_Don't miss out! Book your slot now._\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `_Powered by Lodge Mobile • Secure • Private • Fast_`;
 
       let sent = 0;
       let failed = 0;
@@ -2279,7 +2280,16 @@ class AdminHandler {
       for (const channel of channels) {
         try {
           const options = {
-            parse_mode: 'Markdown'
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '📅 Book Activation Now', url: 'https://t.me/Lodge_client_scheduler_bot?start=book' }],
+                [
+                  { text: '📋 View Services', url: 'https://t.me/Lodge_client_scheduler_bot?start=services' },
+                  { text: '💬 Get Support', url: 'https://t.me/Lodge_client_scheduler_bot?start=support' }
+                ]
+              ]
+            }
           };
           if (channel.topic_id) {
             options.message_thread_id = channel.topic_id;
