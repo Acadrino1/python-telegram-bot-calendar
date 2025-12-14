@@ -1902,6 +1902,7 @@ class AdminHandler {
         [{ text: `👥 Users Only (${userCount?.count || 0})`, callback_data: 'admin_broadcast_to_users' }],
         [{ text: `📣 Groups/Channels Only (${channelCount})`, callback_data: 'admin_broadcast_to_channels' }],
         [{ text: `🌐 Everyone (Users + Groups)`, callback_data: 'admin_broadcast_to_all' }],
+        [{ text: '🎁 Broadcast Coupon', callback_data: 'admin_coupon_broadcast' }],
         [{ text: '❌ Cancel', callback_data: 'admin_panel' }]
       ];
 
@@ -2585,14 +2586,14 @@ class AdminHandler {
       message += `*Active Coupons:* ${activeCoupons}\n`;
       message += `*Weekly Budget Remaining:* $${budget}\n`;
       message += `*Auto-Drop Frequency:* ${dropFrequency}/day\n\n`;
-      message += '_Create and manage discount coupons_';
+      message += '_Create and view discount coupons_\n\n';
+      message += '_💡 To broadcast coupons, use 📢 Broadcast menu_';
 
       await ctx.editMessageText(message, {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
             [{ text: '➕ Create Coupon', callback_data: 'admin_coupon_create' }],
-            [{ text: '📢 Broadcast Coupon', callback_data: 'admin_coupon_broadcast' }],
             [{ text: '📋 List Active', callback_data: 'admin_coupon_list' }],
             [{ text: '← Back to Admin', callback_data: 'admin_panel' }]
           ]
