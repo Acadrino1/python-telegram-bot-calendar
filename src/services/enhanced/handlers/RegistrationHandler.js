@@ -508,8 +508,7 @@ class RegistrationHandler {
 
       // Send payment invoice with QR code embedded
       await ctx.replyWithPhoto(qr, {
-        caption: `📋 *Customer Details Confirmed*\n\n💰 *Payment Required*\n\n${msg}\n\n` +
-          `_Once payment confirmed, you can select appointment date._`,
+        caption: msg,
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [

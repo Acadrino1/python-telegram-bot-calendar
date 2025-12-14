@@ -351,13 +351,22 @@ class MoneroPayService {
   generatePaymentMessage(paymentData) {
     const { address, amountXmr, amountCad, expiresInMinutes } = paymentData;
 
-    return `💰 *Payment Required*\n\n` +
-      `Amount: *${amountXmr} XMR*\n` +
-      `(~$${amountCad.toFixed(2)} CAD)\n\n` +
-      `Send payment to:\n` +
+    return `✅ *Registration Complete*\n\n` +
+      `You're almost done — just one final step.\n\n` +
+      `────────────────────────\n` +
+      `*Payment Details*\n` +
+      `────────────────────────\n\n` +
+      `*Amount:*\n` +
+      `${amountXmr} XMR\n` +
+      `≈ $${amountCad.toFixed(2)} CAD\n\n` +
+      `*Send to this Monero address:*\n` +
       `\`${address}\`\n\n` +
-      `⏱ Payment expires in ${expiresInMinutes} minutes\n\n` +
-      `_Your appointment will be confirmed once payment is received._`;
+      `⏱ *Time Remaining:*\n` +
+      `${expiresInMinutes} minutes\n\n` +
+      `────────────────────────\n` +
+      `*What happens next?*\n` +
+      `────────────────────────\n` +
+      `Once payment is confirmed, you'll be able to choose your appointment date.`;
   }
 
   /**
