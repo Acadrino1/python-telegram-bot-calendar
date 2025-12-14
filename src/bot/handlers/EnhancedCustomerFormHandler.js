@@ -754,7 +754,7 @@ Ready to confirm your booking?
       parse_mode: 'Markdown',
       reply_markup: Markup.inlineKeyboard([
         [
-          Markup.button.callback('✅ Confirm & Continue', 'reg_confirm_final'),
+          Markup.button.callback('✅ Confirm & Pay', 'reg_confirm_final'),
           Markup.button.callback('📝 Edit', 'reg_edit_summary')
         ],
         [Markup.button.callback('❌ Cancel', 'reg_cancel')]
