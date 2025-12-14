@@ -53,7 +53,9 @@ try {
         host: process.env.DB_HOST || 'localhost',
         port: parseInt(process.env.DB_PORT || '3306'),
         user: process.env.DB_USER || 'appuser',
-        password: process.env.DB_PASSWORD || 'apppassword123',
+        password: process.env.DB_PASSWORD || (() => {
+          throw new Error('DB_PASSWORD environment variable is required for MySQL');
+        })(),
         database: process.env.DB_NAME || 'appointment_scheduler'
       },
       pool: { min: 0, max: 10 }

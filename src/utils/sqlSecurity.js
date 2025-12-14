@@ -29,9 +29,9 @@ function validateFieldName(field) {
   return field;
 }
 
-// Security: Validate preference key against allowlist  
+// Security: Validate preference key against allowlist
 function validatePreferenceKey(key) {
-  if (!/^[a-zA-Z0-9_]+/.test(key)) {
+  if (!/^[a-zA-Z0-9_]+$/.test(key)) {  // Fixed: Added $ anchor to prevent suffix injection
     throw new Error('Invalid preference key format: ' + key);
   }
   if (!ALLOWED_PREFERENCE_KEYS.includes(key)) {
@@ -42,7 +42,7 @@ function validatePreferenceKey(key) {
 
 // Security: Validate JSON path format
 function validateJsonPath(path) {
-  if (!/^$.[a-zA-Z0-9_]+/.test(path)) {
+  if (!/^\$\.[a-zA-Z0-9_]+$/.test(path)) {  // Fixed: Properly escape . and add $ anchor
     throw new Error('Invalid JSON path format: ' + path);
   }
   return path;

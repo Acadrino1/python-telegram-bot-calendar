@@ -7,7 +7,9 @@ module.exports = {
       host: process.env.DB_HOST || 'localhost',
       port: process.env.DB_PORT || 3306,
       user: process.env.DB_USER || 'root',
-      password: process.env.DB_PASSWORD || 'password',
+      password: process.env.DB_PASSWORD || (() => {
+        throw new Error('DB_PASSWORD environment variable is required for MySQL');
+      })(),
       database: process.env.DB_NAME || 'appointment_scheduler'
     } : {
       filename: process.env.DB_FILENAME || './database/test_lodge_scheduler.sqlite3'
@@ -73,7 +75,13 @@ module.exports = {
       port: process.env.DB_PORT || 3306,
       user: process.env.DB_USER,
       password: process.env.DB_PASSWORD,
-      database: process.env.DB_NAME
+      database: process.env.DB_NAME,
+      ssl: process.env.DB_SSL === 'true' ? {
+        rejectUnauthorized: true,
+        ca: process.env.DB_SSL_CA,  // Optional: CA certificate
+        cert: process.env.DB_SSL_CERT,  // Optional: Client cert
+        key: process.env.DB_SSL_KEY  // Optional: Client key
+      } : false
     },
     migrations: {
       directory: './database/migrations'

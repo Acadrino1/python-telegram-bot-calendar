@@ -429,7 +429,7 @@ class WaitlistController {
         .where('service_id', value.serviceId)
         .where('status', 'active')
         .whereRaw('JSON_CONTAINS(preferred_dates, ?)', [JSON.stringify(slotDateOnly)])
-        .whereRaw(`JSON_EXTRACT(preferred_times, '$.${timePreference}') = true`)
+        .whereRaw('JSON_EXTRACT(preferred_times, ?) = true', [`$.${timePreference}`])  // Fixed: Parameterized query
         .orderBy('position', 'asc')
         .limit(value.maxContacts)
         .withGraphFetched('[client]');

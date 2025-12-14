@@ -310,7 +310,7 @@ class Appointment extends Model {
       .where('status', 'in', [AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED])
       .where('appointment_datetime', '>', now)
       .where('appointment_datetime', '<=', reminderTime)
-      .whereRaw(`JSON_EXTRACT(reminder_sent, '$.${safeHours}h') IS NULL`)
+      .whereRaw('JSON_EXTRACT(reminder_sent, ?) IS NULL', [`$.${safeHours}h`])  // Fixed: Parameterized query
       .withGraphFetched('[client, provider, service]');
   }
 
