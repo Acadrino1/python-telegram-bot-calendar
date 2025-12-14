@@ -103,6 +103,16 @@ class AdminHandler {
       return await this.handleAdminBotStatus(ctx);
     }
 
+    // Handle admin coupons
+    if (callbackData === 'admin_coupons') {
+      return await this.handleCouponsPanel(ctx);
+    }
+
+    // Handle coupon actions
+    if (callbackData.startsWith('admin_coupon_')) {
+      return await this.handleCouponAction(ctx, callbackData);
+    }
+
     // Handle admin settings panel
     if (callbackData === 'admin_settings') {
       return await this.handleSettingsPanel(ctx);
@@ -358,9 +368,14 @@ class AdminHandler {
       { text: '📢 Broadcast', callback_data: 'admin_broadcast' }
     ]);
 
-    // Row 4: Settings & Status
+    // Row 4: Coupons & Settings
     keyboard.push([
-      { text: '⚙️ Settings', callback_data: 'admin_settings' },
+      { text: '🎟️ Coupons', callback_data: 'admin_coupons' },
+      { text: '⚙️ Settings', callback_data: 'admin_settings' }
+    ]);
+
+    // Row 5: Status
+    keyboard.push([
       { text: '📊 Status', callback_data: 'admin_bot_status' }
     ]);
 
@@ -2547,6 +2562,228 @@ class AdminHandler {
       .replace('Enabled', '')
       .replace('Notification', 'Notify')
       .trim();
+  }
+
+  /**
+   * Show coupons management panel
+   */
+  async handleCouponsPanel(ctx) {
+    try {
+      const Coupon = require('../../../models/Coupon');
+      const CouponBudget = require('../../../models/CouponBudget');
+      const BotSettings = require('../../../models/BotSettings');
+
+      const activeCoupons = await Coupon.getActiveCount();
+      const budget = await CouponBudget.getRemainingBudget();
+      const dropFrequency = await BotSettings.getCouponDropFrequency();
+
+      let message = '*🎟️ Coupon Management*\n\n';
+      message += `*Active Coupons:* ${activeCoupons}\n`;
+      message += `*Weekly Budget Remaining:* $${budget}\n`;
+      message += `*Auto-Drop Frequency:* ${dropFrequency}/day\n\n`;
+      message += '_Create and manage discount coupons_';
+
+      await ctx.editMessageText(message, {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '➕ Create Coupon', callback_data: 'admin_coupon_create' }],
+            [{ text: '📢 Broadcast Coupon', callback_data: 'admin_coupon_broadcast' }],
+            [{ text: '📋 List Active', callback_data: 'admin_coupon_list' }],
+            [{ text: '← Back to Admin', callback_data: 'admin_panel' }]
+          ]
+        }
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Error showing coupons panel:', error);
+      await ctx.editMessageText('❌ Error loading coupons panel.');
+      return true;
+    }
+  }
+
+  /**
+   * Handle coupon actions
+   */
+  async handleCouponAction(ctx, callbackData) {
+    if (callbackData === 'admin_coupon_create') {
+      return await this.handleCreateCoupon(ctx);
+    }
+    if (callbackData === 'admin_coupon_broadcast') {
+      return await this.handleBroadcastCoupon(ctx);
+    }
+    if (callbackData === 'admin_coupon_list') {
+      return await this.handleListCoupons(ctx);
+    }
+    return false;
+  }
+
+  /**
+   * Create a new coupon
+   */
+  async handleCreateCoupon(ctx) {
+    try {
+      await ctx.answerCbQuery();
+      ctx.session.creatingCoupon = true;
+
+      await ctx.reply(
+        '*Create New Coupon*\n\n' +
+        'Enter discount amount in CAD (e.g., 25)\n\n' +
+        '_Send the amount as your next message._',
+        { parse_mode: 'Markdown' }
+      );
+
+      return true;
+    } catch (error) {
+      console.error('Error creating coupon:', error);
+      await ctx.answerCbQuery('Error');
+      return true;
+    }
+  }
+
+  /**
+   * Broadcast a coupon to public group
+   */
+  async handleBroadcastCoupon(ctx) {
+    try {
+      await ctx.answerCbQuery();
+      ctx.session.broadcastingCoupon = true;
+
+      await ctx.reply(
+        '*Broadcast Coupon*\n\n' +
+        'Enter discount amount in CAD (e.g., 25)\n\n' +
+        'This will create a coupon and send it to the public Telegram group.\n\n' +
+        '_Send the amount as your next message._',
+        { parse_mode: 'Markdown' }
+      );
+
+      return true;
+    } catch (error) {
+      console.error('Error broadcasting coupon:', error);
+      await ctx.answerCbQuery('Error');
+      return true;
+    }
+  }
+
+  /**
+   * List active coupons
+   */
+  async handleListCoupons(ctx) {
+    try {
+      const Coupon = require('../../../models/Coupon');
+      const { Model } = require('objection');
+
+      const coupons = await Model.knex()('coupons')
+        .where('status', 'active')
+        .orderBy('created_at', 'desc')
+        .limit(10);
+
+      let message = '*🎟️ Active Coupons*\n\n';
+
+      if (coupons.length === 0) {
+        message += '_No active coupons_';
+      } else {
+        for (const coupon of coupons) {
+          message += `Code: \`${coupon.code}\`\n`;
+          message += `Amount: $${coupon.amount}\n`;
+          message += `Expires: ${new Date(coupon.expires_at).toLocaleDateString()}\n\n`;
+        }
+      }
+
+      await ctx.editMessageText(message, {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '← Back to Coupons', callback_data: 'admin_coupons' }]
+          ]
+        }
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Error listing coupons:', error);
+      await ctx.editMessageText('❌ Error loading coupons.');
+      return true;
+    }
+  }
+
+  /**
+   * Process coupon amount input
+   */
+  async processCouponAmount(ctx, amount) {
+    const parsedAmount = parseFloat(amount);
+
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      await ctx.reply('❌ Invalid amount. Please enter a positive number.');
+      return true;
+    }
+
+    try {
+      const Coupon = require('../../../models/Coupon');
+
+      if (ctx.session.creatingCoupon) {
+        delete ctx.session.creatingCoupon;
+
+        const coupon = await Coupon.createCoupon(parsedAmount, 7);
+
+        await ctx.reply(
+          `✅ *Coupon Created!*\n\n` +
+          `Code: \`${coupon.code}\`\n` +
+          `Amount: $${parsedAmount}\n` +
+          `Expires: 7 days\n\n` +
+          `_Share this code with customers manually._`,
+          { parse_mode: 'Markdown' }
+        );
+
+        return true;
+      }
+
+      if (ctx.session.broadcastingCoupon) {
+        delete ctx.session.broadcastingCoupon;
+
+        const coupon = await Coupon.createCoupon(parsedAmount, 7);
+        const BotChannel = require('../../../models/BotChannel');
+
+        const channel = await BotChannel.query()
+          .where('is_default', true)
+          .first();
+
+        if (!channel) {
+          await ctx.reply('❌ No default channel configured.');
+          return true;
+        }
+
+        await this.bot.telegram.sendMessage(
+          channel.channel_id,
+          `🎁 *Limited Time Offer!*\n\n` +
+          `Get $${parsedAmount} OFF your next appointment!\n\n` +
+          `Use code: \`${coupon.code}\`\n\n` +
+          `Valid for 7 days. First come, first served! 🏃`,
+          { parse_mode: 'Markdown' }
+        );
+
+        await Coupon.markBroadcast(coupon.id, channel.channel_id);
+
+        await ctx.reply(
+          `✅ *Coupon Broadcast!*\n\n` +
+          `Code: \`${coupon.code}\`\n` +
+          `Amount: $${parsedAmount}\n` +
+          `Sent to: ${channel.channel_name}`,
+          { parse_mode: 'Markdown' }
+        );
+
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      console.error('Error processing coupon amount:', error);
+      await ctx.reply('❌ Error creating coupon.');
+      delete ctx.session.creatingCoupon;
+      delete ctx.session.broadcastingCoupon;
+      return true;
+    }
   }
 }
 

@@ -52,6 +52,15 @@ class MessageHandler {
         }
       }
 
+      // Check if admin is creating/broadcasting coupon
+      if (ctx.session?.creatingCoupon || ctx.session?.broadcastingCoupon) {
+        const adminHandler = this.services?.adminHandler;
+        if (adminHandler && typeof adminHandler.processCouponAmount === 'function') {
+          const handled = await adminHandler.processCouponAmount(ctx, ctx.message.text);
+          if (handled) return;
+        }
+      }
+
       // Check if admin is editing a setting value
       if (ctx.session?.editingSetting) {
         const adminHandler = this.services?.adminHandler;
