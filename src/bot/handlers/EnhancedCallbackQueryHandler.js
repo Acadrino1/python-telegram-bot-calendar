@@ -455,11 +455,14 @@ Confirm your booking?
           .update({ appointment_id: appointment.id });
       }
 
-      await this.groupNotificationService.notifyNewBooking(
-        appointment,
-        user,
-        service || { name: booking.service || 'Lodge Mobile Service' }
-      );
+      // Only notify group if payment confirmed (no pending payments)
+      if (ctx.session?.paymentConfirmed) {
+        await this.groupNotificationService.notifyNewBooking(
+          appointment,
+          user,
+          service || { name: booking.service || 'Lodge Mobile Service' }
+        );
+      }
     } catch (appointmentError) {
       console.error('Error creating appointment:', appointmentError);
 

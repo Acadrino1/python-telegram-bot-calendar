@@ -122,7 +122,23 @@ class PaymentHandler {
               );
             }
           } else {
-            // Payment for existing appointment
+            // Payment for existing appointment - notify group
+            const Appointment = require('../../models/Appointment');
+            const User = require('../../models/User');
+            const Service = require('../../models/Service');
+
+            const appointment = await Appointment.query()
+              .findById(payment.appointment_id)
+              .withGraphFetched('[client, service]');
+
+            if (appointment && this.services?.groupNotificationService) {
+              await this.services.groupNotificationService.notifyNewBooking(
+                appointment,
+                appointment.client || await User.query().findById(appointment.client_id),
+                appointment.service || { name: 'Lodge Mobile Service' }
+              );
+            }
+
             await ctx.editMessageCaption(
               `*Payment Confirmed!*\n\n` +
               `Amount: ${this.moneroPayService.atomicToXmr(status.amountReceived)} XMR\n` +
