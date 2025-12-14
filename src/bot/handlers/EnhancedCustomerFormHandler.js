@@ -561,7 +561,7 @@ Ready to confirm your booking?
           parse_mode: 'Markdown',
           reply_markup: Markup.inlineKeyboard([
             [
-              Markup.button.callback('✅ Confirm Booking', 'confirm_booking'),
+              Markup.button.callback('✅ Confirm & Pay', 'confirm_booking'),
               Markup.button.callback('📅 Change Date/Time', 'show_calendar')
             ],
             [Markup.button.callback('❌ Cancel', 'cancel_booking')]
