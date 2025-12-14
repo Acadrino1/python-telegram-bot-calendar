@@ -80,8 +80,12 @@ class MoneroPayService {
   /**
    * Create a payment request via MoneroPay
    * POST /receive
+   * @param {number|null} appointmentId - Single appointment or null for bulk
+   * @param {number} userId - User ID
+   * @param {string} description - Payment description
+   * @param {number} appointmentCount - Number of appointments (for bulk discount)
    */
-  async createPaymentRequest(appointmentId, userId, description = 'Lodge Mobile Appointment') {
+  async createPaymentRequest(appointmentId, userId, description = 'Lodge Mobile Appointment', appointmentCount = 1) {
     // #region agent log
     fetch('http://127.0.0.1:7243/ingest/9ed284dd-42b1-4906-a5f9-81092a7a7cfe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/services/MoneroPayService.js:66',message:'createPaymentRequest entry',data:{appointmentId,userId,description,enabled:this.enabled,baseUrl:this.baseUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'payment',hypothesisId:'D'})}).catch(()=>{});
     // #endregion
@@ -98,7 +102,17 @@ class MoneroPayService {
       throw new Error('Could not fetch XMR exchange rate');
     }
 
-    const atomicUnits = this.cadToAtomicUnits(this.priceCAD, xmrRate);
+    // Calculate price with bulk discount
+    const BotSettings = require('../models/BotSettings');
+    const bulkDiscount = await BotSettings.getBulkDiscountPercentage();
+    let finalPriceCAD = this.priceCAD * appointmentCount;
+
+    if (bulkDiscount > 0 && appointmentCount > 1) {
+      const discountAmount = (finalPriceCAD * bulkDiscount) / 100;
+      finalPriceCAD = finalPriceCAD - discountAmount;
+    }
+
+    const atomicUnits = this.cadToAtomicUnits(finalPriceCAD, xmrRate);
     // #region agent log
     fetch('http://127.0.0.1:7243/ingest/9ed284dd-42b1-4906-a5f9-81092a7a7cfe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/services/MoneroPayService.js:78',message:'Atomic units calculated',data:{atomicUnits,priceCAD:this.priceCAD},timestamp:Date.now(),sessionId:'debug-session',runId:'payment',hypothesisId:'D'})}).catch(()=>{});
     // #endregion
@@ -106,7 +120,8 @@ class MoneroPayService {
       throw new Error('Could not calculate XMR amount');
     }
 
-    console.log(`Creating payment: $${this.priceCAD} CAD = ${this.atomicToXmr(atomicUnits)} XMR (rate: ${xmrRate})`);
+    const discountMsg = bulkDiscount > 0 && appointmentCount > 1 ? ` (${bulkDiscount}% bulk discount applied)` : '';
+    console.log(`Creating payment: $${finalPriceCAD.toFixed(2)} CAD = ${this.atomicToXmr(atomicUnits)} XMR (rate: ${xmrRate})${discountMsg}`);
 
     try {
       const requestUrl = `${this.baseUrl}/receive`;
@@ -151,7 +166,7 @@ class MoneroPayService {
         user_id: userId,
         moneropay_address: paymentData.address,
         payment_id: paymentData.payment_id || null,
-        amount_cad: this.priceCAD,
+        amount_cad: finalPriceCAD.toFixed(2),
         amount_xmr: String(atomicUnits),
         exchange_rate: xmrRate,
         status: 'pending',
@@ -165,7 +180,7 @@ class MoneroPayService {
         id: paymentId,
         address: paymentData.address,
         amountXmr: this.atomicToXmr(atomicUnits),
-        amountCad: this.priceCAD,
+        amountCad: parseFloat(finalPriceCAD.toFixed(2)),
         exchangeRate: xmrRate,
         expiresAt: expiresAt,
         expiresInMinutes: this.paymentWindowMinutes

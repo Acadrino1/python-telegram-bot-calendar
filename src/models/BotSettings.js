@@ -196,6 +196,10 @@ class BotSettings extends Model {
     const end = await this.get('coupon_drop_end_hour', 20);
     return { start, end };
   }
+
+  static async getBulkDiscountPercentage() {
+    return await this.get('bulk_discount_percentage', 0);
+  }
 }
 
 module.exports = BotSettings;
