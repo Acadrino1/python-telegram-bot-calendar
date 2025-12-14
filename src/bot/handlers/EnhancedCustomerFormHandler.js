@@ -683,6 +683,7 @@ Ready to confirm your booking?
                 parse_mode: 'Markdown',
                 reply_markup: Markup.inlineKeyboard([
                   [Markup.button.callback('📅 Select Appointment Date', 'show_calendar')],
+                  [Markup.button.callback('← Back', 'book')],
                   [Markup.button.callback('🏠 Main Menu', 'start')]
                 ]).reply_markup
               }
