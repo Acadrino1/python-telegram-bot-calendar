@@ -503,22 +503,21 @@ class RegistrationHandler {
       const qr = this.services.paymentHandler.moneroPayService
         .generateQrCodeUrl(paymentData.address, paymentData.amountXmr.replace('.', ''));
 
-      await safeEditMessage(ctx,
-        `✅ *Registration Complete!*\n\nYour information saved.\n\n💰 *Payment Required*\n\n${msg}\n\n` +
-        `_Once payment confirmed, you can select appointment date._`,
-        {
-          parse_mode: 'Markdown',
-          reply_markup: {
-            inline_keyboard: [
-              [{text: '🔍 Check Payment', callback_data: `check_payment_${paymentData.id}`}],
-              [{text: '← Back', callback_data: 'book'}]
-            ]
-          }
-        }
-      );
+      // Delete the previous "review your information" message
+      await ctx.deleteMessage().catch(() => {});
 
-      await ctx.replyWithPhoto(qr, {caption: '📱 Scan with Monero wallet'})
-        .catch(e => console.warn('QR send failed:', e));
+      // Send payment invoice with QR code embedded
+      await ctx.replyWithPhoto(qr, {
+        caption: `📋 *Customer Details Confirmed*\n\n💰 *Payment Required*\n\n${msg}\n\n` +
+          `_Once payment confirmed, you can select appointment date._`,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{text: '🔍 Check Payment', callback_data: `check_payment_${paymentData.id}`}],
+            [{text: '← Back', callback_data: 'book'}]
+          ]
+        }
+      });
 
       return true;
     } catch (error) {
