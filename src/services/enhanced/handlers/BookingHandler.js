@@ -70,13 +70,20 @@ class BookingHandler {
     if (existingCustomerServices.includes(serviceType)) {
       // Get all completed registrations for this user
       const Appointment = require('../../../models/Appointment');
+      const User = require('../../../models/User');
       const userId = ctx.from?.id?.toString();
 
-      const completedRegistrations = await Appointment.query()
-        .whereRaw("JSON_EXTRACT(customer_data, '$.telegram_id') = ?", [userId])
+      // Find user by telegram_id
+      const user = await User.query().where('telegram_id', userId).first();
+
+      const completedRegistrations = user ? await Appointment.query()
+        .where('client_id', user.id)
         .where('status', 'completed')
-        .where('service_name', 'like', '%New Registration%')
-        .orderBy('appointment_datetime', 'desc');
+        .whereExists(
+          Appointment.relatedQuery('service')
+            .where('name', 'like', '%New Registration%')
+        )
+        .orderBy('appointment_datetime', 'desc') : [];
 
       if (!completedRegistrations || completedRegistrations.length === 0) {
         await ctx.editMessageText(
