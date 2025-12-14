@@ -43,6 +43,15 @@ class MessageHandler {
         return; // Ignore all non-command messages in groups/channels
       }
 
+      // Check if user is entering a coupon code
+      if (ctx.session?.pendingCouponPaymentId) {
+        const paymentHandler = this.services?.paymentHandler;
+        if (paymentHandler && typeof paymentHandler.processCouponCode === 'function') {
+          const handled = await paymentHandler.processCouponCode(ctx, ctx.message.text);
+          if (handled) return;
+        }
+      }
+
       // Check if admin is editing a setting value
       if (ctx.session?.editingSetting) {
         const adminHandler = this.services?.adminHandler;

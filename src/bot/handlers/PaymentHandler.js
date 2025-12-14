@@ -44,6 +44,9 @@ class PaymentHandler {
     if (callbackData.startsWith('cancel_payment_')) {
       return await this.handleCancelPayment(ctx);
     }
+    if (callbackData.startsWith('redeem_coupon_')) {
+      return await this.handleRedeemCoupon(ctx);
+    }
     return false;
   }
 
@@ -297,6 +300,112 @@ class PaymentHandler {
     } catch (error) {
       console.error('Error creating single payment:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Handle coupon redemption
+   */
+  async handleRedeemCoupon(ctx) {
+    try {
+      await ctx.answerCbQuery();
+
+      const paymentId = ctx.callbackQuery?.data?.split('_')[2];
+      if (!paymentId) {
+        await ctx.reply('Invalid payment reference.');
+        return true;
+      }
+
+      // Store payment ID in session for when user sends coupon code
+      ctx.session.pendingCouponPaymentId = paymentId;
+
+      await ctx.reply(
+        '🎟️ *Enter Coupon Code*\n\n' +
+        'Please type your coupon code (e.g., LODGE-XXXX-XXXX)\n\n' +
+        '_Send the code as your next message._',
+        { parse_mode: 'Markdown' }
+      );
+
+      return true;
+    } catch (error) {
+      console.error('handleRedeemCoupon error:', error);
+      await ctx.answerCbQuery('Error processing request');
+      return true;
+    }
+  }
+
+  /**
+   * Process coupon code from text message
+   */
+  async processCouponCode(ctx, couponCode) {
+    const paymentId = ctx.session.pendingCouponPaymentId;
+
+    if (!paymentId) {
+      return false; // Not in coupon redemption flow
+    }
+
+    try {
+      const Coupon = require('../../models/Coupon');
+      const { Model } = require('objection');
+      const knex = Model.knex();
+
+      // Validate coupon
+      const validation = await Coupon.validateCoupon(couponCode);
+
+      if (!validation.valid) {
+        await ctx.reply(`❌ ${validation.error}\n\nPlease try again or contact support.`);
+        return true;
+      }
+
+      const coupon = validation.coupon;
+
+      // Get payment record
+      const payment = await knex('payments').where('id', paymentId).first();
+      if (!payment) {
+        await ctx.reply('❌ Payment not found.');
+        delete ctx.session.pendingCouponPaymentId;
+        return true;
+      }
+
+      // Apply discount
+      const originalAmount = parseFloat(payment.amount_cad);
+      const discount = parseFloat(coupon.amount);
+      const newAmount = Math.max(0, originalAmount - discount);
+
+      // Update payment amount
+      await knex('payments').where('id', paymentId).update({
+        amount_cad: newAmount.toFixed(2),
+        updated_at: new Date()
+      });
+
+      // Redeem coupon
+      await Coupon.redeemCoupon(couponCode, ctx.from.id, payment.appointment_id);
+
+      // Clear pending state
+      delete ctx.session.pendingCouponPaymentId;
+
+      // Recalculate XMR amount
+      const xmrRate = parseFloat(payment.exchange_rate);
+      const newAtomicUnits = this.moneroPayService.cadToAtomicUnits(newAmount, xmrRate);
+      const newAmountXmr = this.moneroPayService.atomicToXmr(newAtomicUnits);
+
+      await ctx.reply(
+        `✅ *Coupon Applied!*\n\n` +
+        `Code: \`${coupon.code}\`\n` +
+        `Discount: -$${discount.toFixed(2)} CAD\n\n` +
+        `*New Amount Due:*\n` +
+        `${newAmountXmr} XMR\n` +
+        `≈ $${newAmount.toFixed(2)} CAD\n\n` +
+        `_Payment address remains the same. Send the updated amount._`,
+        { parse_mode: 'Markdown' }
+      );
+
+      return true;
+    } catch (error) {
+      console.error('processCouponCode error:', error);
+      await ctx.reply('❌ Error applying coupon. Please try again.');
+      delete ctx.session.pendingCouponPaymentId;
+      return true;
     }
   }
 }

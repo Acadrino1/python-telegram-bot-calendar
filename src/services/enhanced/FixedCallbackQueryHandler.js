@@ -249,7 +249,7 @@ class FixedCallbackQueryHandler extends EventEmitter {
     }
 
     // Payment actions
-    if (callbackData.startsWith('check_payment_') || callbackData.startsWith('cancel_payment_')) {
+    if (callbackData.startsWith('check_payment_') || callbackData.startsWith('cancel_payment_') || callbackData.startsWith('redeem_coupon_')) {
       if (this.services.paymentHandler) {
         return await this.services.paymentHandler.handleCallback(ctx, callbackData);
       }
