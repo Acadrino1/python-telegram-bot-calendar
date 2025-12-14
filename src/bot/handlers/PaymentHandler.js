@@ -134,18 +134,25 @@ class PaymentHandler {
         } else if (BigInt(status.amountReceived || '0') > 0) {
           const amountXmr = this.moneroPayService.atomicToXmr(status.amountReceived);
           const expectedXmr = this.moneroPayService.atomicToXmr(payment.amount_xmr);
+          const remaining = BigInt(payment.amount_xmr) - BigInt(status.amountReceived);
+          const remainingXmr = this.moneroPayService.atomicToXmr(remaining);
 
           await ctx.editMessageCaption(
             `*Partial Payment Received*\n\n` +
-            `Received: ${amountXmr} XMR\n` +
+            `Received: ${amountXmr} XMR ✓\n` +
             `Expected: ${expectedXmr} XMR\n` +
+            `Remaining: ${remainingXmr} XMR\n` +
             `Confirmations: ${status.confirmations}\n\n` +
-            `Please send the remaining amount to complete your booking.`,
+            `*What to do:*\n` +
+            `• Send remaining ${remainingXmr} XMR to same address\n` +
+            `• Or contact support if you sent full amount\n` +
+            `• Transaction may still be confirming`,
             {
               parse_mode: 'Markdown',
               reply_markup: Markup.inlineKeyboard([
-                [Markup.button.callback('Check Again', `check_payment_${paymentId}`)],
-                [Markup.button.callback('Cancel Booking', `cancel_payment_${paymentId}`)]
+                [Markup.button.callback('🔍 Check Again', `check_payment_${paymentId}`)],
+                [Markup.button.callback('📞 Support', 'support')],
+                [Markup.button.callback('❌ Cancel', `cancel_payment_${paymentId}`)]
               ]).reply_markup
             }
           );
@@ -159,8 +166,17 @@ class PaymentHandler {
             await ctx.editMessageCaption(
               `*Payment Expired*\n\n` +
               `The payment window has closed.\n\n` +
-              `Please start a new booking with /book`,
-              { parse_mode: 'Markdown' }
+              `*What to do:*\n` +
+              `• Start a new booking with /book\n` +
+              `• If you sent payment, contact support (/support) with your transaction ID\n` +
+              `• Payments sent after expiry will be manually verified`,
+              {
+                parse_mode: 'Markdown',
+                reply_markup: Markup.inlineKeyboard([
+                  [Markup.button.callback('📞 Contact Support', 'support')],
+                  [Markup.button.callback('🔄 New Booking', 'book')]
+                ]).reply_markup
+              }
             );
           } else {
             const remainingMinutes = Math.ceil((expiresAt - now) / 60000);

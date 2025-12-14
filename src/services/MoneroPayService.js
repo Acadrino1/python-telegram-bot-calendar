@@ -381,7 +381,11 @@ class MoneroPayService {
       `────────────────────────\n` +
       `*What happens next?*\n` +
       `────────────────────────\n` +
-      `Once payment is confirmed, you'll be able to choose your appointment date.`;
+      `• Send exact amount to address above\n` +
+      `• Click "Check Payment" once sent\n` +
+      `• Payment confirms in 1-5 minutes\n` +
+      `• Then you can select your appointment\n\n` +
+      `_⚠️ Payment stuck? Use "Check Payment" or contact support._`;
   }
 
   /**
