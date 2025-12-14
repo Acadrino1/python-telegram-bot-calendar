@@ -2749,31 +2749,46 @@ class AdminHandler {
         const coupon = await Coupon.createCoupon(parsedAmount, 7);
         const BotChannel = require('../../../models/BotChannel');
 
-        const channel = await BotChannel.query()
-          .where('is_default', true)
-          .first();
+        const channels = await BotChannel.getActiveBroadcastChannels();
 
-        if (!channel) {
-          await ctx.reply('❌ No default channel configured.');
+        if (channels.length === 0) {
+          await ctx.reply('❌ No active broadcast channels configured.');
           return true;
         }
 
-        await this.bot.telegram.sendMessage(
-          channel.channel_id,
+        let sent = 0;
+        let failed = 0;
+
+        const message =
           `🎁 *Limited Time Offer!*\n\n` +
           `Get $${parsedAmount} OFF your next appointment!\n\n` +
           `Use code: \`${coupon.code}\`\n\n` +
-          `Valid for 7 days. First come, first served! 🏃`,
-          { parse_mode: 'Markdown' }
-        );
+          `Valid for 7 days. First come, first served! 🏃`;
 
-        await Coupon.markBroadcast(coupon.id, channel.channel_id);
+        for (const channel of channels) {
+          try {
+            const options = { parse_mode: 'Markdown' };
+            if (channel.topic_id) {
+              options.message_thread_id = channel.topic_id;
+            }
+
+            await this.bot.telegram.sendMessage(channel.chat_id, message, options);
+            await Coupon.markBroadcast(coupon.id, channel.chat_id);
+            sent++;
+          } catch (error) {
+            failed++;
+            console.error(`Failed to broadcast coupon to ${channel.chat_id}:`, error.message);
+            console.error('Stack:', error.stack);
+          }
+          await new Promise(r => setTimeout(r, 100));
+        }
 
         await ctx.reply(
-          `✅ *Coupon Broadcast!*\n\n` +
+          `✅ *Coupon Broadcast Complete!*\n\n` +
           `Code: \`${coupon.code}\`\n` +
           `Amount: $${parsedAmount}\n` +
-          `Sent to: ${channel.channel_name}`,
+          `Sent to: ${sent} channel(s)\n` +
+          `Failed: ${failed}`,
           { parse_mode: 'Markdown' }
         );
 
