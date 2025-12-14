@@ -385,7 +385,12 @@ class MoneroPayService {
       `• Click "Check Payment" once sent\n` +
       `• Payment confirms in 1-5 minutes\n` +
       `• Then you can select your appointment\n\n` +
-      `_⚠️ Payment stuck? Use "Check Payment" or contact support._`;
+      `────────────────────────\n` +
+      `*⚠️ Payment Issues?*\n` +
+      `────────────────────────\n` +
+      `• Use "Check Payment" to verify status\n` +
+      `• If payment not credited after 60 minutes, create a support ticket with /support\n` +
+      `• Include your transaction ID for manual verification`;
   }
 
   /**
