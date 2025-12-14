@@ -84,6 +84,29 @@ class CalendarUIManager {
     bot.action(/calendar-telegram-ignore-[\d\w-]+/g, (context) =>
       context.answerCbQuery()
     );
+
+    // Handle time slots pagination
+    bot.action(/timeslots_page_(\d+)_(.+)/, async (ctx) => {
+      try {
+        const page = parseInt(ctx.match[1]);
+        const selectedDate = ctx.match[2];
+
+        // Update session page
+        if (ctx.session) {
+          ctx.session.timeSlotsPage = page;
+        }
+
+        // Re-render time slots for the new page
+        await ctx.answerCbQuery();
+        await this.handleDateSelection(ctx, selectedDate);
+      } catch (error) {
+        console.error('Time slots pagination error:', error);
+        await ctx.answerCbQuery('Error loading page');
+      }
+    });
+
+    // Handle noop (page indicator button)
+    bot.action('noop', (ctx) => ctx.answerCbQuery());
   }
 
   /**
@@ -300,15 +323,38 @@ class CalendarUIManager {
       if (ctx.session) {
         ctx.session.booking = ctx.session.booking || {};
         ctx.session.booking.date = selectedDate;
+        // Reset to first page when selecting a new date
+        ctx.session.timeSlotsPage = 0;
       }
 
+      // Pagination: show 6 slots per page
+      const page = ctx.session?.timeSlotsPage || 0;
+      const slotsPerPage = 6;
+      const totalPages = Math.ceil(slots.length / slotsPerPage);
+      const startIdx = page * slotsPerPage;
+      const endIdx = Math.min(startIdx + slotsPerPage, slots.length);
+      const pageSlots = slots.slice(startIdx, endIdx);
+
       // Show time slots (slot has: time24, time12, endTime, datetime)
-      const timeButtons = slots.map(slot => [
+      const timeButtons = pageSlots.map(slot => [
         Markup.button.callback(
           `${slot.time12} - ${slot.endTime}`,
           `time_${slot.time24}`
         )
       ]);
+
+      // Add pagination buttons if needed
+      if (totalPages > 1) {
+        const navRow = [];
+        if (page > 0) {
+          navRow.push(Markup.button.callback('◀️ Previous', `timeslots_page_${page - 1}_${selectedDate}`));
+        }
+        navRow.push(Markup.button.callback(`Page ${page + 1}/${totalPages}`, 'noop'));
+        if (page < totalPages - 1) {
+          navRow.push(Markup.button.callback('Next ▶️', `timeslots_page_${page + 1}_${selectedDate}`));
+        }
+        timeButtons.push(navRow);
+      }
 
       // Add back to calendar button
       timeButtons.push([Markup.button.callback('← Back to Calendar', 'show_calendar')]);
@@ -317,7 +363,8 @@ class CalendarUIManager {
 
       await ctx.editMessageText(
         `📅 *${formattedDate}*\n\n` +
-        `⏰ Select an available time slot:`,
+        `⏰ Select an available time slot:\n` +
+        `_Showing ${startIdx + 1}-${endIdx} of ${slots.length} slots_`,
         {
           parse_mode: 'Markdown',
           reply_markup: Markup.inlineKeyboard(timeButtons).reply_markup

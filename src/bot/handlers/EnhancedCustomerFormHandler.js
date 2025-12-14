@@ -633,7 +633,8 @@ Ready to confirm your booking?
                 {
                   parse_mode: 'Markdown',
                   reply_markup: Markup.inlineKeyboard([
-                    [Markup.button.callback('Check Payment Status', `check_payment_${paymentData.id}`)],
+                    [Markup.button.callback('🔍 Check Payment Status', `check_payment_${paymentData.id}`)],
+                    [Markup.button.callback('📅 Continue Without Payment', 'show_calendar')],
                     [Markup.button.callback('🏠 Main Menu', 'start')]
                   ]).reply_markup
                 }
