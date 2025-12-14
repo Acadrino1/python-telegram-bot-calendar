@@ -2270,9 +2270,7 @@ class AdminHandler {
         `${urgencyText}\n\n` +
         `📱 Service: ${serviceName}\n` +
         `📅 Date: ${formattedDate}\n\n` +
-        `_Don't miss out! Book your slot now._\n\n` +
-        `━━━━━━━━━━━━━━━━━━━━\n\n` +
-        `_Powered by Lodge Mobile • Secure • Private • Fast_`;
+        `_Don't miss out! Book your slot now._`;
 
       let sent = 0;
       let failed = 0;
@@ -2283,11 +2281,7 @@ class AdminHandler {
             parse_mode: 'Markdown',
             reply_markup: {
               inline_keyboard: [
-                [{ text: '📅 Book Activation Now', url: 'https://t.me/Lodge_client_scheduler_bot?start=book' }],
-                [
-                  { text: '📋 View Services', url: 'https://t.me/Lodge_client_scheduler_bot?start=services' },
-                  { text: '💬 Get Support', url: 'https://t.me/Lodge_client_scheduler_bot?start=support' }
-                ]
+                [{ text: '📅 Join Lodge Client Scheduler', url: 'https://t.me/Lodge_client_scheduler_bot' }]
               ]
             }
           };
