@@ -165,6 +165,8 @@ class NavigationHandler {
     try {
       const User = require('../../../models/User');
       const Appointment = require('../../../models/Appointment');
+      const { Model } = require('objection');
+      const knex = Model.knex();
 
       const user = await User.query()
         .where('telegram_id', ctx.from.id.toString())
@@ -192,7 +194,20 @@ class NavigationHandler {
         .orderBy('appointment_datetime', 'asc')
         .limit(10);
 
-      if (appointments.length === 0) {
+      // Fetch payment history
+      const payments = await knex('payments')
+        .where('user_id', user.id)
+        .whereIn('status', ['confirmed', 'pending'])
+        .orderBy('created_at', 'desc')
+        .limit(20);
+
+      const totalSpent = await knex('payments')
+        .where('user_id', user.id)
+        .where('status', 'confirmed')
+        .sum('amount_cad as total')
+        .first();
+
+      if (appointments.length === 0 && payments.length === 0) {
         await safeEditMessage(ctx,
           '📋 *Your Appointments*\n\n' +
           'You have no upcoming appointments.\n\n' +
@@ -210,54 +225,80 @@ class NavigationHandler {
         return true;
       }
 
-      let message = '📋 *Your Upcoming Appointments:*\n\n';
+      let message = '';
       const inlineKeyboard = [];
 
-      appointments.forEach((apt, index) => {
-        const dateTime = moment(apt.appointment_datetime).tz('America/New_York');
-        const formattedDate = dateTime.format('MMM DD, YYYY');
-        const formattedTime = dateTime.format('h:mm A');
+      // Appointments section
+      if (appointments.length > 0) {
+        message += '📋 *Your Upcoming Appointments:*\n\n';
 
-        // Format status with icon
-        let statusDisplay = apt.status;
-        if (apt.status === 'pending_approval') {
-          statusDisplay = '⏳ Pending Approval';
-        } else if (apt.status === 'booked') {
-          statusDisplay = '📋 Booked';
-        } else if (apt.status === 'confirmed') {
-          statusDisplay = '✅ Confirmed';
-        } else if (apt.status === 'completed') {
-          statusDisplay = '✔️ Completed';
-        } else if (apt.status === 'scheduled') {
-          statusDisplay = '📅 Scheduled';
-        } else if (apt.status === 'in_progress') {
-          statusDisplay = '🔄 In Progress';
-        } else if (apt.status === 'cancelled') {
-          statusDisplay = '❌ Cancelled';
-        } else if (apt.status === 'rejected') {
-          statusDisplay = '❌ Rejected';
+        appointments.forEach((apt, index) => {
+          const dateTime = moment(apt.appointment_datetime).tz('America/New_York');
+          const formattedDate = dateTime.format('MMM DD, YYYY');
+          const formattedTime = dateTime.format('h:mm A');
+
+          // Format status with icon
+          let statusDisplay = apt.status;
+          if (apt.status === 'pending_approval') {
+            statusDisplay = '⏳ Pending Approval';
+          } else if (apt.status === 'booked') {
+            statusDisplay = '📋 Booked';
+          } else if (apt.status === 'confirmed') {
+            statusDisplay = '✅ Confirmed';
+          } else if (apt.status === 'completed') {
+            statusDisplay = '✔️ Completed';
+          } else if (apt.status === 'scheduled') {
+            statusDisplay = '📅 Scheduled';
+          } else if (apt.status === 'in_progress') {
+            statusDisplay = '🔄 In Progress';
+          } else if (apt.status === 'cancelled') {
+            statusDisplay = '❌ Cancelled';
+          } else if (apt.status === 'rejected') {
+            statusDisplay = '❌ Rejected';
+          }
+
+          // Get customer name from bulk upload or registration form
+          const customerName = apt.customer_first_name
+            ? `${apt.customer_first_name} ${apt.customer_last_name || ''}`.trim()
+            : null;
+
+          message += `${index + 1}. *${apt.service?.name || 'Lodge Scheduler Service'}*\n`;
+          if (customerName) {
+            message += `   👤 ${customerName}\n`;
+          }
+          message += `   📆 ${formattedDate}\n`;
+          message += `   ⏰ ${formattedTime} EST\n`;
+          message += `   🔗 Status: ${statusDisplay}\n\n`;
+
+          // Add cancel button for each appointment
+          inlineKeyboard.push([
+            { text: `❌ Cancel #${index + 1}`, callback_data: `user_cancel_${apt.uuid}` }
+          ]);
+        });
+
+        message += '_Tap a button below to cancel an appointment_\n\n';
+      }
+
+      // Payment history section
+      if (payments.length > 0) {
+        message += '━━━━━━━━━━━━━━━━━━━━\n\n';
+        message += '💰 *Payment History:*\n\n';
+
+        const total = totalSpent?.total || 0;
+        message += `💵 Total Spent: *$${parseFloat(total).toFixed(2)} CAD*\n\n`;
+
+        payments.slice(0, 5).forEach((pay, idx) => {
+          const payDate = moment(pay.created_at).tz('America/New_York').format('MMM DD, YYYY');
+          const statusIcon = pay.status === 'confirmed' ? '✅' : pay.status === 'pending' ? '⏳' : '❌';
+          const amount = parseFloat(pay.amount_cad || 0).toFixed(2);
+
+          message += `${idx + 1}. ${statusIcon} $${amount} CAD — ${payDate}\n`;
+        });
+
+        if (payments.length > 5) {
+          message += `\n_...and ${payments.length - 5} more transaction(s)_\n`;
         }
-
-        // Get customer name from bulk upload or registration form
-        const customerName = apt.customer_first_name
-          ? `${apt.customer_first_name} ${apt.customer_last_name || ''}`.trim()
-          : null;
-
-        message += `${index + 1}. *${apt.service?.name || 'Lodge Scheduler Service'}*\n`;
-        if (customerName) {
-          message += `   👤 ${customerName}\n`;
-        }
-        message += `   📆 ${formattedDate}\n`;
-        message += `   ⏰ ${formattedTime} EST\n`;
-        message += `   🔗 Status: ${statusDisplay}\n\n`;
-
-        // Add cancel button for each appointment
-        inlineKeyboard.push([
-          { text: `❌ Cancel #${index + 1}`, callback_data: `user_cancel_${apt.uuid}` }
-        ]);
-      });
-
-      message += '_Tap a button below to cancel an appointment_';
+      }
 
       // Add navigation buttons
       inlineKeyboard.push([{ text: '📅 Book Another', callback_data: 'book' }]);
