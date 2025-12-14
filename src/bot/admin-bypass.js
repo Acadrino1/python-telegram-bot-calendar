@@ -1,8 +1,10 @@
 /**
- * Admin Bypass Module - Ensures Ch1fu always has admin access
+ * Admin Bypass Module - Ensures authorized admins have access
  */
 
-const ADMIN_IDS = ['7930798268']; // Ch1fu's Telegram ID
+const ADMIN_IDS = process.env.ADMIN_TELEGRAM_ID
+  ? process.env.ADMIN_TELEGRAM_ID.split(',').map(id => id.trim())
+  : [];
 
 // Override any permission checks
 function isAdmin(userId) {

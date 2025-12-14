@@ -31,9 +31,9 @@ class AuthPlugin extends BasePlugin {
     this.referralCodeService = new ReferralCodeService();
     
     // Admin configuration
-    this.adminIds = process.env.ADMIN_USER_IDS ? 
+    this.adminIds = process.env.ADMIN_USER_IDS ?
       process.env.ADMIN_USER_IDS.split(',').map(id => id.trim()) : [];
-    this.ADMIN_ID = '7930798268'; // Primary admin
+    this.ADMIN_ID = process.env.ADMIN_TELEGRAM_ID || process.env.ADMIN_USER_ID;
 
     // Define commands
     this.commands = [

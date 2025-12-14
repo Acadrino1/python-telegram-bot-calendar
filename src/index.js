@@ -499,11 +499,25 @@ Ready to handle appointments! 🗓️
 process.on('SIGTERM', () => app?.gracefulShutdown());
 process.on('SIGINT', () => app?.gracefulShutdown());
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection:', reason);
-  console.error('Promise:', promise);
+  console.error('❌ Unhandled Rejection at:', promise);
+  console.error('Reason:', reason);
+  console.error('Stack:', reason?.stack);
+  console.error('Full error details:', {
+    message: reason?.message,
+    name: reason?.name,
+    code: reason?.code,
+    stack: reason?.stack
+  });
 });
 process.on('uncaughtException', (error) => {
   console.error('❌ Uncaught Exception:', error);
+  console.error('Stack:', error.stack);
+  console.error('Full error details:', {
+    message: error.message,
+    name: error.name,
+    code: error.code,
+    stack: error.stack
+  });
   process.exit(1);
 });
 
@@ -513,18 +527,24 @@ let app;
 async function main() {
   try {
     app = new AppointmentSchedulerApp();
-    
+
     // Wait for initialization before starting
     console.log('⏳ Initializing application...');
     await app.initPromise;
     console.log('✅ Initialization complete');
-    
+
     // Start the server
     await app.start();
   } catch (error) {
     console.error('❌ FATAL: Application failed to start');
     console.error('Error:', error.message);
     console.error('Stack:', error.stack);
+    console.error('Full error details:', {
+      message: error.message,
+      name: error.name,
+      code: error.code,
+      stack: error.stack
+    });
     process.exit(1);
   }
 }

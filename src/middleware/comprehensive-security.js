@@ -24,7 +24,7 @@ try {
 class ComprehensiveSecurity {
   constructor() {
     this.blockedTokens = ['TELEGRAM_BOT_TOKEN_PLACEHOLDER'];
-    this.unauthorizedAdmins = ['7930798268'];
+    this.testAdminIds = ['123456789', '000000000'];
     this.suspiciousIPs = new Map();
     this.auditLog = [];
   }

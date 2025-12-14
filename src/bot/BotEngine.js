@@ -200,8 +200,8 @@ class BotEngine {
   isAdmin(telegramId) {
     if (!telegramId) return false;
     const adminIds = this.services.adminIds || [];
-    const ADMIN_ID = process.env.ADMIN_USER_ID || '7930798268';
-    return adminIds.includes(telegramId.toString()) || telegramId.toString() === ADMIN_ID;
+    const ADMIN_ID = process.env.ADMIN_USER_ID || process.env.ADMIN_TELEGRAM_ID;
+    return adminIds.includes(telegramId.toString()) || (ADMIN_ID && telegramId.toString() === ADMIN_ID);
   }
 
   // Start the bot

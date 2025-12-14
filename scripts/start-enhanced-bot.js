@@ -109,12 +109,44 @@ async function startBot() {
       if (statsInterval) clearInterval(statsInterval);
       bot.stop('SIGTERM');
     });
-    
+
   } catch (error) {
     console.error('❌ Failed to start enhanced bot:', error);
+    console.error('Stack:', error.stack);
+    console.error('Full error details:', {
+      message: error.message,
+      name: error.name,
+      code: error.code,
+      stack: error.stack
+    });
     process.exit(1);
   }
 }
+
+// Global error handlers
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise);
+  console.error('Reason:', reason);
+  console.error('Stack:', reason?.stack);
+  console.error('Full error details:', {
+    message: reason?.message,
+    name: reason?.name,
+    code: reason?.code,
+    stack: reason?.stack
+  });
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  console.error('Stack:', error.stack);
+  console.error('Full error details:', {
+    message: error.message,
+    name: error.name,
+    code: error.code,
+    stack: error.stack
+  });
+  process.exit(1);
+});
 
 // Start the bot
 startBot();

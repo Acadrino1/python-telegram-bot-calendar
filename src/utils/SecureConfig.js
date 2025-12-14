@@ -32,13 +32,13 @@ class SecureConfig {
       process.exit(1);
     }
 
-    // Check for unauthorized admin IDs
-    const unauthorizedAdmins = ['7930798268'];
+    // Check for test/example admin IDs in production
+    const testAdminIds = ['123456789', '000000000'];
     const adminIds = process.env.ADMIN_USER_IDS?.split(',') || [];
-    const hasUnauthorized = adminIds.some(id => unauthorizedAdmins.includes(id.trim()));
-    
-    if (hasUnauthorized) {
-      console.error('🚨 Unauthorized admin ID detected in ADMIN_USER_IDS');
+    const hasTestId = adminIds.some(id => testAdminIds.includes(id.trim()));
+
+    if (hasTestId && process.env.NODE_ENV === 'production') {
+      console.error('🚨 Test admin ID detected in production ADMIN_USER_IDS');
       process.exit(1);
     }
   }

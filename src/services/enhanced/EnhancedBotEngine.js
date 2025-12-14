@@ -207,6 +207,16 @@ class EnhancedBotEngine extends MemoryManager {
     // Setup error handling
     this.bot.catch((error, ctx) => {
       console.error('❌ Bot error:', error);
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+        code: error.code,
+        userId: ctx?.from?.id,
+        chatId: ctx?.chat?.id,
+        updateType: ctx?.updateType,
+        callbackQuery: ctx?.callbackQuery?.data
+      });
       this.handleBotError(error, ctx);
     });
     
@@ -1015,13 +1025,33 @@ Need help? Contact support with /support or /ticket
     if (this.performanceMonitor) {
       this.performanceMonitor.incrementCounter('errors');
     }
-    
+
+    // Log full error context for debugging
+    console.error('Full error context:', {
+      error: {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+        code: error.code
+      },
+      context: ctx ? {
+        userId: ctx.from?.id,
+        username: ctx.from?.username,
+        chatId: ctx.chat?.id,
+        updateType: ctx.updateType,
+        message: ctx.message?.text,
+        callbackData: ctx.callbackQuery?.data,
+        command: ctx.message?.text?.split(' ')[0]
+      } : 'No context available'
+    });
+
     try {
       if (ctx && ctx.reply) {
         await ctx.reply('❌ An error occurred. Our team has been notified.');
       }
     } catch (replyError) {
       console.error('❌ Error sending error message:', replyError);
+      console.error('Reply error stack:', replyError.stack);
     }
   }
 

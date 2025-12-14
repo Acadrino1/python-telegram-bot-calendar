@@ -156,6 +156,13 @@ class SimpleTelegramBot {
       console.log('🤖 SimpleTelegramBot started successfully with modular architecture!');
     } catch (error) {
       console.error('Failed to start SimpleTelegramBot:', error);
+      console.error('Stack:', error.stack);
+      console.error('Full error details:', {
+        message: error.message,
+        name: error.name,
+        code: error.code,
+        stack: error.stack
+      });
       throw error;
     }
   }

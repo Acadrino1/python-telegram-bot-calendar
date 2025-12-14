@@ -6,8 +6,8 @@ require('dotenv').config();
 const { Telegraf } = require('telegraf');
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const CHAT_ID = '-1002174429964';
-const TOPIC_ID = 7394;
+const CHAT_ID = process.env.BROADCAST_CHAT_ID || '-1002174429964';
+const TOPIC_ID = parseInt(process.env.BROADCAST_TOPIC_ID || '7394');
 
 async function sendAnnouncement() {
   console.log('📢 Sending system update announcement...');
