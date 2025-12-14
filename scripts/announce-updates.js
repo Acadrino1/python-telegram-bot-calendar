@@ -50,8 +50,8 @@ _Powered by Lodge Mobile • Secure • Private • Fast_`;
         inline_keyboard: [
           [{ text: '📅 Book TELUS Activation Now', url: 'https://t.me/Lodge_client_scheduler_bot?start=book' }],
           [
-            { text: '💰 View Services', url: 'https://t.me/Lodge_client_scheduler_bot?start=services' },
-            { text: '🎧 Get Support', url: 'https://t.me/Lodge_client_scheduler_bot?start=support' }
+            { text: '📋 View Services', url: 'https://t.me/Lodge_client_scheduler_bot?start=services' },
+            { text: '💬 Get Support', url: 'https://t.me/Lodge_client_scheduler_bot?start=support' }
           ]
         ]
       }

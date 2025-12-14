@@ -531,30 +531,63 @@ class EnhancedBotEngine extends MemoryManager {
           // User came from announcement - go straight to new registration
           ctx.session = ctx.session || {};
           ctx.session.booking = ctx.session.booking || {};
-          if (this.services?.bookingHandler) {
-            await this.services.bookingHandler.handleLodgeService({
-              ...ctx,
-              callbackQuery: { data: 'service_lodge_mobile_new_registration' }
-            });
-          } else {
-            await ctx.reply('📅 Use /book to get started');
-          }
+          console.log('📊 Deep link: NEW REGISTRATION via ?start=book');
+          await ctx.reply(
+            `*Lodge Mobile: New Registration*\n\n` +
+            `How many customers are you registering?\n\n` +
+            `*Single Registration:*\n` +
+            `Register one customer step-by-step (13 fields)\n\n` +
+            `*Bulk Upload:*\n` +
+            `Register multiple customers via Excel file (max 20)`,
+            {
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: 'Single Registration', callback_data: 'reg_mode_single' }],
+                  [{ text: 'Bulk Upload (Multiple)', callback_data: 'reg_mode_bulk' }],
+                  [{ text: 'Download Template', callback_data: 'bulk_download_template' }],
+                  [{ text: 'Back to Services', callback_data: 'book' }]
+                ]
+              }
+            }
+          );
           return;
         } else if (payload === 'services') {
           // Show service selection
-          if (this.services?.navigationHandler) {
-            await this.services.navigationHandler.showServiceSelection(ctx);
-          } else {
-            await ctx.reply('📅 Use /book to see available services');
-          }
+          console.log('📊 Deep link: SERVICE SELECTION via ?start=services');
+          await ctx.reply(
+            '📅 *Lodge Scheduler Services*\n\nPlease select one of the following service options:',
+            {
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '🆕 New Registration', callback_data: 'service_lodge_mobile_new_registration' }],
+                  [{ text: '📱 SIM Card Activation', callback_data: 'service_lodge_mobile_simcard_activation' }],
+                  [{ text: '🔧 Technical Support', callback_data: 'service_lodge_mobile_technical_support' }],
+                  [{ text: '📲 Upgrade Device', callback_data: 'service_lodge_mobile_upgrade_device' }]
+                ]
+              }
+            }
+          );
           return;
         } else if (payload === 'support') {
           // Show support menu
-          if (this.services?.supportHandler) {
-            await this.services.supportHandler.showMainMenu(ctx);
-          } else {
-            await ctx.reply('🎧 Use /support to contact us');
-          }
+          console.log('📊 Deep link: SUPPORT MENU via ?start=support');
+          await ctx.reply(
+            `💬 *Support Center*\n\nHow can we help you today?\n\nChoose an option below:`,
+            {
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '🎫 Create Ticket', callback_data: 'support_create_ticket' }],
+                  [{ text: '📋 My Tickets', callback_data: 'support_my_tickets' }],
+                  [{ text: '💱 Get Monero', callback_data: 'support_get_monero' }],
+                  [{ text: '❓ FAQ', callback_data: 'support_faq' }],
+                  [{ text: '← Back to Menu', callback_data: 'main_menu' }]
+                ]
+              }
+            }
+          );
           return;
         }
 
