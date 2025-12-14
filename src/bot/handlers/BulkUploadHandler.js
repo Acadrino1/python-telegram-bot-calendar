@@ -30,6 +30,8 @@ class BulkUploadHandler {
         return await this.handleSingleMode(ctx);
       case 'reg_mode_bulk':
         return await this.handleBulkMode(ctx);
+      case 'single_upload_txt':
+        return await this.handleSingleTxtUpload(ctx);
       case 'bulk_download_template':
         return await this.handleDownloadTemplate(ctx);
       case 'bulk_confirm':
@@ -68,17 +70,79 @@ class BulkUploadHandler {
 
     await ctx.editMessageText(
       `*Single Registration Selected*\n\n` +
-      `We'll collect information for one customer.\n\n` +
-      `This form has 13 steps. Ready to begin?`,
+      `Choose your preferred method:\n\n` +
+      `*Manual Entry:*\n` +
+      `Fill out the 13-step form step-by-step\n\n` +
+      `*Upload .txt File:*\n` +
+      `Pre-filled text file with customer info (faster)`,
       {
         parse_mode: 'Markdown',
         reply_markup: Markup.inlineKeyboard([
-          [Markup.button.callback('Start Registration', 'reg_start')],
+          [Markup.button.callback('📝 Manual Entry', 'reg_start')],
+          [Markup.button.callback('📄 Upload .txt File', 'single_upload_txt')],
           [Markup.button.callback('Back', 'service_lodge_mobile_new_registration')]
         ]).reply_markup
       }
     );
     return true;
+  }
+
+  /**
+   * Handle "Upload .txt File" for single registration
+   */
+  async handleSingleTxtUpload(ctx) {
+    console.log('📝 BULK HANDLER: single_upload_txt clicked');
+    await ctx.answerCbQuery('Preparing template...');
+
+    // Initialize single txt upload session
+    ctx.session = ctx.session || {};
+    ctx.session.singleTxtUpload = {
+      active: true,
+      awaitingFile: true
+    };
+    ctx.session.bulkUpload = null;
+    ctx.session.booking = {
+      service: 'Lodge Mobile: New Registration',
+      requiresForm: true
+    };
+
+    try {
+      // Send template for single customer
+      const templateBuffer = this.bulkUploadService.getSingleTemplateBuffer();
+      const templateFilename = 'single-registration-template.txt';
+
+      await ctx.replyWithDocument(
+        {
+          source: templateBuffer,
+          filename: templateFilename
+        },
+        {
+          caption: '*Single Registration Template*\n\n' +
+            '1. Open this TXT file in any text editor\n' +
+            '2. Fill in ONE customer using | as separator\n' +
+            '3. Use SKIP for optional fields\n' +
+            '4. Save and upload the file here\n\n' +
+            'Required: First Name, Last Name, DOB, Address, Province, Postal Code',
+          parse_mode: 'Markdown'
+        }
+      );
+
+      // Prompt for file upload
+      await ctx.reply(
+        'Upload your completed TXT file when ready:',
+        {
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('Cancel', 'service_lodge_mobile_new_registration')]
+          ]).reply_markup
+        }
+      );
+      return true;
+    } catch (error) {
+      console.error('Error sending single template:', error);
+      console.error('Stack:', error.stack);
+      await ctx.reply('Failed to generate template. Please try again.');
+      return true;
+    }
   }
 
   /**
@@ -367,6 +431,148 @@ class BulkUploadHandler {
           reply_markup: Markup.inlineKeyboard([
             [Markup.button.callback('Try Again', 'reg_mode_bulk')],
             [Markup.button.callback('Cancel', 'book')]
+          ]).reply_markup
+        }
+      );
+      return true;
+    }
+  }
+
+  /**
+   * Handle single txt file upload
+   */
+  async handleSingleDocumentUpload(ctx) {
+    console.log('📄 BulkUploadHandler.handleSingleDocumentUpload called');
+
+    if (!ctx.session?.singleTxtUpload?.awaitingFile) {
+      console.log('📄 Not awaiting single file, returning false');
+      return false;
+    }
+
+    const document = ctx.message.document;
+    console.log('📄 Single document received:', document.file_name);
+
+    // Validate file type - accept TXT files
+    const fileName = (document.file_name || '').toLowerCase();
+    if (!fileName.endsWith('.txt')) {
+      await ctx.reply('Please upload a TXT file (.txt).');
+      return true;
+    }
+
+    await ctx.reply('Processing your file...');
+
+    try {
+      const fileLink = await ctx.telegram.getFileLink(document.file_id);
+      const response = await fetch(fileLink.href);
+      const buffer = Buffer.from(await response.arrayBuffer());
+
+      console.log('📄 File downloaded, parsing single customer TXT...');
+
+      // Parse TXT file (should have 1 line only)
+      const parseResult = this.bulkUploadService.parseTextFile(buffer);
+
+      if (!parseResult.success) {
+        await ctx.reply(
+          `Failed to process file:\n${parseResult.error}\n\n` +
+          'Please check your file and try again.',
+          {
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback('Try Again', 'single_upload_txt')],
+              [Markup.button.callback('Cancel', 'service_lodge_mobile_new_registration')]
+            ]).reply_markup
+          }
+        );
+        return true;
+      }
+
+      // Should have exactly 1 registration
+      if (parseResult.registrations.length === 0) {
+        await ctx.reply(
+          'No customer data found in file. Please add customer information and try again.',
+          {
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback('Try Again', 'single_upload_txt')],
+              [Markup.button.callback('Cancel', 'service_lodge_mobile_new_registration')]
+            ]).reply_markup
+          }
+        );
+        return true;
+      }
+
+      if (parseResult.registrations.length > 1) {
+        await ctx.reply(
+          `Multiple customers found (${parseResult.registrations.length}).\n\n` +
+          'For single registration, use only ONE line.\n' +
+          'For multiple customers, use "Bulk Upload" instead.',
+          {
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback('Try Again', 'single_upload_txt')],
+              [Markup.button.callback('Bulk Upload Instead', 'reg_mode_bulk')],
+              [Markup.button.callback('Cancel', 'service_lodge_mobile_new_registration')]
+            ]).reply_markup
+          }
+        );
+        return true;
+      }
+
+      // Validate the single customer
+      const validationResult = this.bulkUploadService.validateAllRows(parseResult.registrations);
+
+      if (validationResult.invalidCount > 0) {
+        const errorReport = this.bulkUploadService.generateErrorReport(validationResult.invalid);
+        await ctx.reply(
+          `Validation errors:\n\n${errorReport}\n\nPlease fix and re-upload.`,
+          {
+            parse_mode: 'Markdown',
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback('Try Again', 'single_upload_txt')],
+              [Markup.button.callback('Cancel', 'service_lodge_mobile_new_registration')]
+            ]).reply_markup
+          }
+        );
+        return true;
+      }
+
+      // Store customer data in session for booking
+      const customer = validationResult.valid[0];
+      ctx.session.customerInfo = customer;
+      ctx.session.registration = {
+        service: 'Lodge Mobile: New Registration',
+        step: 'confirm',
+        data: customer
+      };
+      ctx.session.singleTxtUpload = null; // Clear upload mode
+
+      // Build full address
+      const suiteUnit = customer.suiteUnit && customer.suiteUnit !== 'skip' ? ` Unit ${customer.suiteUnit},` : '';
+      const fullAddress = `${customer.streetNumber}${suiteUnit} ${customer.streetAddress}, ${customer.city}, ${customer.province} ${customer.postalCode}`;
+      const dobDisplay = customer.dateOfBirth ? `\n*DOB:* ${customer.dateOfBirth}` : '';
+
+      const message = `*Customer Loaded Successfully*\n\n` +
+        `*Name:* ${customer.firstName} ${customer.lastName}${dobDisplay}\n` +
+        `*Address:* ${fullAddress}\n` +
+        `*Phone:* ${customer.phoneNumber || 'N/A'}\n` +
+        `*Email:* ${customer.email || 'N/A'}\n\n` +
+        `Ready to book appointment?`;
+
+      await ctx.reply(message, {
+        parse_mode: 'Markdown',
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback('Book Appointment', 'show_calendar')],
+          [Markup.button.callback('Cancel', 'service_lodge_mobile_new_registration')]
+        ]).reply_markup
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Error processing single upload:', error);
+      console.error('Stack:', error.stack);
+      await ctx.reply(
+        'An error occurred while processing your file. Please try again.',
+        {
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('Try Again', 'single_upload_txt')],
+            [Markup.button.callback('Cancel', 'service_lodge_mobile_new_registration')]
           ]).reply_markup
         }
       );

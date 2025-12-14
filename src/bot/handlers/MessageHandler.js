@@ -178,9 +178,17 @@ class MessageHandler {
           await bulkUploadHandler.handleDocumentUpload(ctx);
         }
       }
+      // Check if we're in single txt upload mode
+      else if (ctx.session?.singleTxtUpload?.awaitingFile) {
+        const bulkUploadHandler = this.services?.bulkUploadHandler;
+        if (bulkUploadHandler && typeof bulkUploadHandler.handleSingleDocumentUpload === 'function') {
+          await bulkUploadHandler.handleSingleDocumentUpload(ctx);
+        }
+      }
       // No response to random documents - users must use /commands
     } catch (error) {
       console.error('Error handling document message:', error);
+      console.error('Stack:', error.stack);
     }
   }
 

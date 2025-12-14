@@ -168,7 +168,7 @@ class FixedCallbackQueryHandler extends EventEmitter {
 
     // Bulk upload callbacks (must be checked before reg_ since reg_mode_* is a subset)
     // Route directly to BulkUploadHandler
-    if (callbackData.startsWith('bulk_') || callbackData === 'reg_mode_single' || callbackData === 'reg_mode_bulk') {
+    if (callbackData.startsWith('bulk_') || callbackData === 'reg_mode_single' || callbackData === 'reg_mode_bulk' || callbackData === 'single_upload_txt') {
       return await this.bulkUploadHandler.handleCallback(ctx, callbackData);
     }
 

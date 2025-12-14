@@ -335,6 +335,46 @@ class BulkUploadService {
   getTemplateFilename() {
     return 'bulk-registration-template.txt';
   }
+
+  /**
+   * Create single customer template
+   */
+  createSingleTemplate() {
+    const template = `# ===========================
+# SINGLE CUSTOMER REGISTRATION TEMPLATE
+# ===========================
+#
+# Fill in ONE customer's information below
+# Use | (pipe) as separator between fields
+# Use SKIP for optional fields
+#
+# Format (all on ONE line):
+# FirstName | LastName | DOB | AddressLine1 | Province | PostalCode | PhoneNumber | Email | IDType | IDNumber | ContactMethod | ReferralSource | Notes
+#
+# Example:
+# John | Doe | 01/15/1990 | 123 Main St | ON | M5V 2T6 | 4165551234 | john.doe@email.com | Driver's License | D1234567 | Email | Friend | SKIP
+#
+# Required Fields: FirstName, LastName, DOB, AddressLine1, Province, PostalCode
+# Optional Fields: PhoneNumber, Email, IDType, IDNumber, ContactMethod, ReferralSource, Notes
+#
+# Date format: MM/DD/YYYY
+# Province: 2-letter code (ON, BC, AB, QC, etc.)
+# Postal Code: X1X 1X1 format
+#
+# ===========================
+# ENTER CUSTOMER INFO BELOW:
+# ===========================
+
+`;
+    return Buffer.from(template, 'utf-8');
+  }
+
+  /**
+   * Get or create single template buffer for sending
+   */
+  getSingleTemplateBuffer() {
+    return this.createSingleTemplate();
+  }
 }
 
 module.exports = BulkUploadService;
