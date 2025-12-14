@@ -441,14 +441,48 @@ Confirm your booking?
       notes: `${booking.service || 'Lodge Mobile Service'} - Booked via Telegram${ctx.session.customerInfo ? '\\nCustomer Registration: Yes' : ''}`,
       price: service?.price || 0
     };
-    
-    const appointment = await Appointment.query().insert(appointmentData);
-    
-    await this.groupNotificationService.notifyNewBooking(
-      appointment,
-      user,
-      service || { name: booking.service || 'Lodge Mobile Service' }
-    );
+
+    let appointment;
+    try {
+      appointment = await Appointment.query().insert(appointmentData);
+
+      // Link payment to appointment if payment was made
+      if (ctx.session?.paymentId) {
+        const { Model } = require('objection');
+        const knex = Model.knex();
+        await knex('payments')
+          .where('id', ctx.session.paymentId)
+          .update({ appointment_id: appointment.id });
+      }
+
+      await this.groupNotificationService.notifyNewBooking(
+        appointment,
+        user,
+        service || { name: booking.service || 'Lodge Mobile Service' }
+      );
+    } catch (appointmentError) {
+      console.error('Error creating appointment:', appointmentError);
+
+      // If payment was made, notify user to contact support
+      if (ctx.session?.paymentConfirmed) {
+        await ctx.editMessageText(
+          `❌ *Appointment Creation Failed*\n\n` +
+          `⚠️ Your payment was successful, but we encountered an error creating your appointment.\n\n` +
+          `💰 Payment ID: \`${ctx.session.paymentId}\`\n\n` +
+          `Please contact support immediately. Your payment is safe and will be honored.`,
+          {
+            parse_mode: 'Markdown',
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback('📞 Contact Support', 'support_main')],
+              [Markup.button.callback('🏠 Main Menu', 'main_menu')]
+            ]).reply_markup
+          }
+        );
+      } else {
+        await ctx.reply('❌ Error creating appointment. Please try again or contact support.');
+      }
+      return;
+    }
     
     const displayDateTime = this.bookingSlotService.formatDateTime(appointment.appointment_datetime);
 
@@ -463,19 +497,26 @@ Confirm your booking?
       ]
     ]);
 
-    await ctx.editMessageText(
-      `✅ *Appointment Booked Successfully!*\n\n` +
+    // Build success message with payment confirmation if applicable
+    let successMessage = `✅ *Appointment Booked Successfully!*\n\n`;
+
+    // Add payment confirmation if payment was required
+    if (ctx.session?.paymentConfirmed && ctx.session?.paymentId) {
+      successMessage += `💰 *Payment Confirmed*\n✅ Your payment has been verified\n\n`;
+    }
+
+    successMessage +=
       `📱 Service: ${booking.service || "Lodge Mobile Service"}\n` +
       `📅 Date: ${displayDateTime.date}\n` +
       `⏰ Time: ${displayDateTime.time}\n` +
       `🌎 Timezone: ${displayDateTime.timezone}\n\n` +
       `Appointment ID: \`${appointment.uuid}\`\n\n` +
-      `Use /myappointments to view all your bookings.`,
-      { 
-        parse_mode: 'Markdown',
-        reply_markup: postBookingKeyboard.reply_markup
-      }
-    );
+      `Use /myappointments to view all your bookings.`;
+
+    await ctx.editMessageText(successMessage, {
+      parse_mode: 'Markdown',
+      reply_markup: postBookingKeyboard.reply_markup
+    });
 
     // Clear session state (Rule 11 compliance)
     ctx.session.booking = {};
