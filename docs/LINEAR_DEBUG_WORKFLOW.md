@@ -97,9 +97,91 @@ PATTERN: <what failures tell us about where bug ISN'T>
 - MUST reference ruled-out items
 - Move DOWN the stack (app→lib→OS)
 - Consider compound issues (A+B together)
-- Max 3 rounds before escalate/pair
+- Max 3 rounds before → Phase 4.5
 
 ### If ✅ Found → Phase 5
+
+---
+
+## PHASE 4.5: EXTERNAL RESEARCH (Only After Fix Fails)
+
+**Trigger:** Fix implemented but not working, or 3 hypothesis rounds exhausted.
+
+### Research Priority Order
+1. Official docs first
+2. GitHub issues/discussions
+3. Stack Overflow
+4. Community forums
+
+### Telegram/Telethon Resources
+| Resource | URL | Use For |
+|----------|-----|--------|
+| Telethon Docs | https://docs.telethon.dev/en/stable/ | Client API, events, sessions |
+| Telethon GitHub Issues | https://github.com/LonamiWebs/Telethon/issues | Known bugs, edge cases |
+| Telegram Bot API | https://core.telegram.org/bots/api | Official bot methods, limits |
+| Telegram MTProto | https://core.telegram.org/mtproto | Low-level protocol issues |
+| Telegraf.js Docs | https://telegraf.js.org/ | JS bot framework |
+| Telegraf GitHub | https://github.com/telegraf/telegraf/issues | JS-specific issues |
+| python-telegram-bot | https://docs.python-telegram-bot.org/ | Alt Python reference |
+
+### Python/Asyncio Resources
+| Resource | URL | Use For |
+|----------|-----|--------|
+| asyncio Docs | https://docs.python.org/3/library/asyncio.html | Event loops, tasks, await |
+| Real Python asyncio | https://realpython.com/async-io-python/ | Practical patterns |
+| aiohttp Docs | https://docs.aiohttp.org/ | Async HTTP client/server |
+
+### Monero/MoneroPay Resources
+| Resource | URL | Use For |
+|----------|-----|--------|
+| MoneroPay GitHub | https://github.com/moneropay/moneropay | Webhook spec, setup |
+| Monero RPC Docs | https://www.getmonero.org/resources/developer-guides/wallet-rpc.html | Wallet RPC calls |
+| Monero StackExchange | https://monero.stackexchange.com/ | Community Q&A |
+
+### JavaScript/Node Resources
+| Resource | URL | Use For |
+|----------|-----|--------|
+| Node.js Docs | https://nodejs.org/docs/latest/api/ | Core modules |
+| Express.js Docs | https://expressjs.com/en/4x/api.html | Routing, middleware |
+| MDN Web Docs | https://developer.mozilla.org/en-US/docs/Web/JavaScript | JS reference |
+
+### General Debug Resources
+| Resource | URL | Use For |
+|----------|-----|--------|
+| Stack Overflow | https://stackoverflow.com/questions/tagged/<tag> | Error messages, patterns |
+| GitHub Code Search | https://github.com/search?type=code | Find usage examples |
+| npm package issues | https://github.com/<org>/<pkg>/issues | Package-specific bugs |
+
+### Search Query Templates
+```
+# Telegram
+telethon "<error message>" site:github.com
+telegraf callback "<symptom>" site:stackoverflow.com
+telegram bot api "<method>" rate limit
+
+# Monero
+moneropay webhook "<error>" site:github.com
+monero-wallet-rpc "<error code>"
+
+# General
+"<exact error message>" site:stackoverflow.com
+"<package name>" "<error>" site:github.com/issues
+```
+
+### Research Checklist
+- [ ] Searched official docs for method/error
+- [ ] Checked GitHub issues for exact error
+- [ ] Searched SO with error message
+- [ ] Checked package version compatibility
+- [ ] Found similar issue? Link in Linear issue
+
+### Document Findings
+```
+SOURCE: <url>
+RELEVANCE: High/Med/Low
+KEY INSIGHT: <one line>
+APPLIES BECAUSE: <why this matches our case>
+```
 
 ---
 
