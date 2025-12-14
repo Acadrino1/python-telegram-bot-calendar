@@ -263,6 +263,14 @@ class RegistrationHandler {
 
     const hasBookingData = ctx.session.booking?.date && ctx.session.booking?.time;
 
+    // Check if payment is required before showing calendar
+    if (this.services?.paymentHandler?.moneroPayService?.isEnabled()) {
+      if (!ctx.session?.paymentConfirmed && !hasBookingData) {
+        // Payment required - create payment request
+        return await this.handlePaymentCreation(ctx);
+      }
+    }
+
     if (hasBookingData) {
       // Show combined summary
       await this.showCombinedBookingSummary(ctx, customerInfo, formHandler);
@@ -467,6 +475,57 @@ class RegistrationHandler {
     }
 
     return false;
+  }
+
+  /**
+   * Handle payment creation after registration
+   */
+  async handlePaymentCreation(ctx) {
+    try {
+      const User = require('../../../models/User');
+      const user = await User.query()
+        .where('telegram_id', ctx.from.id.toString())
+        .first();
+
+      if (!user) {
+        await safeEditMessage(ctx, '❌ User not found. /start again.');
+        return true;
+      }
+
+      const paymentData = await this.services.paymentHandler.moneroPayService
+        .createPaymentRequest(null, user.id, 'Lodge Mobile Appointment - Booking Fee');
+
+      ctx.session.paymentId = paymentData.id;
+      ctx.session.paymentAddress = paymentData.address;
+      ctx.session.paymentConfirmed = false;
+
+      const msg = this.services.paymentHandler.moneroPayService.generatePaymentMessage(paymentData);
+      const qr = this.services.paymentHandler.moneroPayService
+        .generateQrCodeUrl(paymentData.address, paymentData.amountXmr.replace('.', ''));
+
+      await safeEditMessage(ctx,
+        `✅ *Registration Complete!*\n\nYour information saved.\n\n💰 *Payment Required*\n\n${msg}\n\n` +
+        `_Once payment confirmed, you can select appointment date._`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{text: '🔍 Check Payment', callback_data: `check_payment_${paymentData.id}`}],
+              [{text: '← Back', callback_data: 'book'}]
+            ]
+          }
+        }
+      );
+
+      await ctx.replyWithPhoto(qr, {caption: '📱 Scan with Monero wallet'})
+        .catch(e => console.warn('QR send failed:', e));
+
+      return true;
+    } catch (error) {
+      console.error('Payment creation error:', error);
+      await safeEditMessage(ctx, `❌ Payment error: ${error.message}\n\nTry again or contact support.`);
+      return true;
+    }
   }
 }
 

@@ -520,7 +520,11 @@ class EnhancedCustomerFormHandler {
         await this.showFormStep(ctx, 'postalCode');
       });
     });
-    
+
+    // NOTE: reg_confirm_final is handled by RegistrationHandler.handleRegConfirmFinal()
+    // due to consolidated callback routing in FixedCallbackQueryHandler (line 181-183).
+    // Payment logic has been moved there. This bot.action() handler is never reached.
+    /*
     // Handle final confirmation
     this.bot.action('reg_confirm_final', async (ctx) => {
       await ctx.answerCbQuery();
@@ -695,7 +699,8 @@ Ready to confirm your booking?
         }, 1500);
       }
     });
-    
+    */
+
     // Handle edit from summary
     this.bot.action('reg_edit_summary', async (ctx) => {
       await ctx.answerCbQuery();
