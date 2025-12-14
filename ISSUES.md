@@ -40,5 +40,11 @@ Implement deep link handling:
 
 **Priority:** Medium
 **Tags:** [bug] [telegram] [UX]
-**Status:** Open
+**Status:** Fixed
 **Created:** 2024-12-14
+**Resolved:** 2024-12-14
+
+**Fix Applied:**
+- Added deep link handlers in EnhancedBotEngine.js:528-552
+- Updated announce-updates.js to use `?start=book`, `?start=services`, `?start=support`
+- Buttons now trigger specific bot sections in private chat

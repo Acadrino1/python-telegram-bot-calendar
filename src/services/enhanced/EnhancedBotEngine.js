@@ -528,10 +528,33 @@ class EnhancedBotEngine extends MemoryManager {
         // Check for deep link payload (e.g., /start book)
         const payload = ctx.startPayload;
         if (payload === 'book') {
-          // User came from group chat /book redirect - go straight to booking
-          const BookingCommand = require('../../bot/commands/BookingCommand');
-          const bookingCommand = new BookingCommand(this.bot, this.services);
-          await bookingCommand.execute(ctx);
+          // User came from announcement - go straight to new registration
+          ctx.session = ctx.session || {};
+          ctx.session.booking = ctx.session.booking || {};
+          if (this.services?.bookingHandler) {
+            await this.services.bookingHandler.handleLodgeService({
+              ...ctx,
+              callbackQuery: { data: 'service_lodge_mobile_new_registration' }
+            });
+          } else {
+            await ctx.reply('📅 Use /book to get started');
+          }
+          return;
+        } else if (payload === 'services') {
+          // Show service selection
+          if (this.services?.navigationHandler) {
+            await this.services.navigationHandler.showServiceSelection(ctx);
+          } else {
+            await ctx.reply('📅 Use /book to see available services');
+          }
+          return;
+        } else if (payload === 'support') {
+          // Show support menu
+          if (this.services?.supportHandler) {
+            await this.services.supportHandler.showMainMenu(ctx);
+          } else {
+            await ctx.reply('🎧 Use /support to contact us');
+          }
           return;
         }
 
