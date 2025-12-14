@@ -514,7 +514,9 @@ class EnhancedBotEngine extends MemoryManager {
                           (user.approval_status === 'denied');
 
           if (isDenied) {
-            await ctx.reply(
+            // Send to user's DM only, never to groups
+            await ctx.telegram.sendMessage(
+              ctx.from.id,
               '❌ *Access Denied*\n\n' +
               'Your access request has been denied.\n\n' +
               'If you believe this is an error, please contact support.',
@@ -523,8 +525,9 @@ class EnhancedBotEngine extends MemoryManager {
             return;
           }
 
-          // User is pending approval
-          await ctx.reply(
+          // User is pending approval - send to user's DM only
+          await ctx.telegram.sendMessage(
+            ctx.from.id,
             '🔒 *Access Pending*\n\n' +
             'Your access request is pending admin approval.\n\n' +
             '*Available Commands:*\n' +

@@ -235,7 +235,7 @@ class AuthMiddleware {
 
   async handleUnapprovedUser(ctx, user) {
     const command = this.extractCommand(ctx);
-    
+
     if (user.isPending()) {
       const message = `
 🔒 *Access Pending*
@@ -248,12 +248,15 @@ Your access request is pending admin approval.
 • /help - Show help
 
 You'll be notified when approved!`;
-      
-      return ctx.replyWithMarkdown(message);
+
+      // Send to user's DM only, never to groups
+      return ctx.telegram.sendMessage(ctx.from.id, message, { parse_mode: 'Markdown' });
     }
-    
+
     if (user.isDenied()) {
-      return ctx.reply(
+      // Send to user's DM only, never to groups
+      return ctx.telegram.sendMessage(
+        ctx.from.id,
         '❌ *Access Denied*\n\n' +
         'Your access request has been denied.\n\n' +
         'If you believe this is an error, please contact support.',
@@ -261,8 +264,8 @@ You'll be notified when approved!`;
       );
     }
     
-    // Default case
-    return ctx.reply('Your account requires approval. Please wait for admin review.');
+    // Default case - send to user's DM only
+    return ctx.telegram.sendMessage(ctx.from.id, 'Your account requires approval. Please wait for admin review.');
   }
 
   // Static method to create middleware instance
