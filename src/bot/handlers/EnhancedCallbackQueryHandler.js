@@ -346,7 +346,69 @@ Confirm your booking?
         'Please use /book to select another time.'
       );
     }
-    
+
+    // Check if payment is required and not yet confirmed
+    if (this.services?.paymentHandler?.moneroPayService?.isEnabled()) {
+      if (!ctx.session?.paymentConfirmed) {
+        // Create payment request
+        const MoneroPayService = require('../../services/MoneroPayService');
+        const moneroPayService = new MoneroPayService();
+
+        try {
+          const paymentData = await moneroPayService.createPaymentRequest(
+            null, // appointmentId - will be set after payment
+            user.id,
+            `Lodge Mobile Appointment - ${booking.service || 'Service'}`
+          );
+
+          // Store payment info in session
+          ctx.session.paymentId = paymentData.id;
+          ctx.session.paymentAddress = paymentData.address;
+          ctx.session.paymentConfirmed = false;
+
+          // Generate payment message
+          const paymentMessage = moneroPayService.generatePaymentMessage(paymentData);
+          const qrUrl = moneroPayService.generateQrCodeUrl(
+            paymentData.address,
+            paymentData.amountXmr.replace('.', '')
+          );
+
+          await ctx.editMessageText(
+            `💰 *Payment Required*\n\n` +
+            `${paymentMessage}\n\n` +
+            `_Once payment is confirmed, your appointment will be finalized._`,
+            {
+              parse_mode: 'Markdown',
+              reply_markup: Markup.inlineKeyboard([
+                [Markup.button.callback('🔍 Check Payment Status', `check_payment_${paymentData.id}`)],
+                [Markup.button.callback('← Back', 'show_calendar')],
+                [Markup.button.callback('🏠 Main Menu', 'start')]
+              ]).reply_markup
+            }
+          );
+
+          // Send QR code
+          try {
+            await ctx.replyWithPhoto(qrUrl, {
+              caption: '📱 Scan this QR code with your Monero wallet to pay',
+              parse_mode: 'Markdown'
+            });
+          } catch (photoError) {
+            console.warn('Could not send QR code photo:', photoError);
+          }
+
+          return; // Don't create appointment yet
+        } catch (paymentError) {
+          console.error('Error creating payment:', paymentError);
+          await ctx.reply(
+            `❌ Error creating payment request: ${paymentError.message}\n\n` +
+            `Please try again or contact support.`
+          );
+          return;
+        }
+      }
+    }
+
     const dateTime = moment.tz(`${booking.date} ${booking.time}`, 'YYYY-MM-DD HH:mm', bookingConfig.timezone);
     
     let service = null;

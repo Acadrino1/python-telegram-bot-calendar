@@ -85,22 +85,39 @@ class PaymentHandler {
           fetch('http://127.0.0.1:7243/ingest/9ed284dd-42b1-4906-a5f9-81092a7a7cfe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/bot/handlers/PaymentHandler.js:76',message:'Payment confirmed - updating session',data:{paymentId:payment.id,hasSession:!!ctx.session},timestamp:Date.now(),sessionId:'debug-session',runId:'payment-flow',hypothesisId:'I'})}).catch(()=>{});
           // #endregion
 
-          // Check if appointment exists - if not, show calendar
+          // Check if appointment exists - if not, finalize booking
           if (!payment.appointment_id) {
-            // Payment was created before appointment - now show calendar
-            await ctx.editMessageText(
-              `✅ *Payment Confirmed!*\n\n` +
-              `Amount: ${this.moneroPayService.atomicToXmr(status.amountReceived)} XMR\n` +
-              `Confirmations: ${status.confirmations}\n\n` +
-              `Now you can select your appointment date and time.`,
-              {
-                parse_mode: 'Markdown',
-                reply_markup: Markup.inlineKeyboard([
-                  [Markup.button.callback('📅 Select Appointment Date', 'show_calendar')],
-                  [Markup.button.callback('🏠 Main Menu', 'main_menu')]
-                ]).reply_markup
-              }
-            );
+            // Payment confirmed - check if we have booking data to finalize
+            if (ctx.session?.booking?.date && ctx.session?.booking?.time) {
+              await ctx.editMessageText(
+                `✅ *Payment Confirmed!*\n\n` +
+                `Amount: ${this.moneroPayService.atomicToXmr(status.amountReceived)} XMR\n` +
+                `Confirmations: ${status.confirmations}\n\n` +
+                `Creating your appointment...`,
+                { parse_mode: 'Markdown' }
+              );
+
+              // Re-trigger booking confirmation to create appointment
+              setTimeout(() => {
+                ctx.callbackQuery = { data: 'confirm_booking' };
+                this.bot.handleUpdate({ callback_query: ctx.callbackQuery, ...ctx.update });
+              }, 1500);
+            } else {
+              // No booking data yet - show calendar
+              await ctx.editMessageText(
+                `✅ *Payment Confirmed!*\n\n` +
+                `Amount: ${this.moneroPayService.atomicToXmr(status.amountReceived)} XMR\n` +
+                `Confirmations: ${status.confirmations}\n\n` +
+                `Now you can select your appointment date and time.`,
+                {
+                  parse_mode: 'Markdown',
+                  reply_markup: Markup.inlineKeyboard([
+                    [Markup.button.callback('📅 Select Appointment Date', 'show_calendar')],
+                    [Markup.button.callback('🏠 Main Menu', 'main_menu')]
+                  ]).reply_markup
+                }
+              );
+            }
           } else {
             // Payment for existing appointment
             await ctx.editMessageCaption(
