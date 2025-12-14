@@ -122,7 +122,7 @@ async function validateSecurity() {
         const securityPatchPath = path.join(CONFIG.projectRoot, 'security', 'security-patches.js');
         if (fs.existsSync(securityPatchPath)) {
             const content = fs.readFileSync(securityPatchPath, 'utf8');
-            if (content.includes('8124276494:AAEXy61BMBQcrz6TCCNHRI3_4d6fbXERy8M')) {
+            if (content.includes('TELEGRAM_BOT_TOKEN_PLACEHOLDER')) {
                 securityTests.exposedTokenBlocked = true;
                 log.success('Exposed bot token is blocked');
             } else {

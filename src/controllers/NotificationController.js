@@ -5,10 +5,7 @@ const NotificationService = require('../services/NotificationService');
 const User = require('../models/User');
 
 class NotificationController {
-  /**
-   * Get notifications
-   * GET /api/notifications
-   */
+
   static async getAll(req, res, next) {
     try {
       const { userId, type, status, channel, page = 1, limit = 20 } = req.query;
@@ -18,18 +15,18 @@ class NotificationController {
 
       // Apply role-based filtering
       if (req.user.role === 'client') {
-        query = query.where('userId', req.user.userId);
+        query = query.where('user_id', req.user.userId);
       } else if (req.user.role === 'provider') {
         // Providers can see notifications for their clients
         query = query
           .joinRelated('appointment.provider')
           .where('appointment:provider.id', req.user.userId)
-          .orWhere('userId', req.user.userId);
+          .orWhere('user_id', req.user.userId);
       }
 
       // Apply additional filters
       if (userId && req.user.role === 'admin') {
-        query = query.where('userId', userId);
+        query = query.where('user_id', userId);
       }
       if (type) {
         query = query.where('type', type);
@@ -49,12 +46,12 @@ class NotificationController {
       const notifications = await query
         .withGraphFetched('[user, appointment]')
         .modifyGraph('user', builder => {
-          builder.select('id', 'firstName', 'lastName', 'email');
+          builder.select('id', 'first_name', 'last_name', 'email');
         })
         .limit(limit)
         .offset(offset)
-        .orderBy('scheduledFor', 'desc')
-        .orderBy('createdAt', 'desc');
+        .orderBy('scheduled_for', 'desc')
+        .orderBy('created_at', 'desc');
 
       res.json({
         notifications,
@@ -70,10 +67,6 @@ class NotificationController {
     }
   }
 
-  /**
-   * Get notification by ID
-   * GET /api/notifications/:id
-   */
   static async getById(req, res, next) {
     try {
       const notification = await Notification.query()
@@ -87,7 +80,7 @@ class NotificationController {
       }
 
       // Check access permissions
-      if (req.user.role === 'client' && notification.userId !== req.user.userId) {
+      if (req.user.role === 'client' && notification.user_id !== req.user.userId) {
         return res.status(403).json({ 
           error: 'Access denied' 
         });
@@ -99,10 +92,6 @@ class NotificationController {
     }
   }
 
-  /**
-   * Create manual notification (admin/provider only)
-   * POST /api/notifications
-   */
   static async create(req, res, next) {
     try {
       // Only providers and admins can create manual notifications
@@ -158,7 +147,7 @@ class NotificationController {
         // Providers can only send to their clients
         const isClient = await req.user
           .$relatedQuery('appointmentsAsProvider')
-          .where('clientId', value.userId)
+          .where('client_id', value.userId)
           .first();
 
         if (!isClient) {
@@ -176,7 +165,7 @@ class NotificationController {
         const template = await NotificationTemplate.query()
           .where('type', value.type)
           .where('channel', value.channel === 'both' ? 'email' : value.channel)
-          .where('isActive', true)
+          .where('is_active', true)
           .first();
 
         if (template) {
@@ -191,11 +180,11 @@ class NotificationController {
 
             if (appointment) {
               const replacements = {
-                clientName: `${appointment.client.firstName} ${appointment.client.lastName}`,
-                providerName: `${appointment.provider.firstName} ${appointment.provider.lastName}`,
+                clientName: `${appointment.client.first_name} ${appointment.client.last_name}`,
+                providerName: `${appointment.provider.first_name} ${appointment.provider.last_name}`,
                 serviceName: appointment.service.name,
-                appointmentDate: appointment.scheduledStart.toLocaleDateString(),
-                appointmentTime: appointment.scheduledStart.toLocaleTimeString()
+                appointmentDate: new Date(appointment.appointment_datetime).toLocaleDateString(),
+                appointmentTime: new Date(appointment.appointment_datetime).toLocaleTimeString()
               };
 
               for (const [key, val] of Object.entries(replacements)) {
@@ -210,13 +199,13 @@ class NotificationController {
 
       // Create notification
       const notification = await Notification.query().insert({
-        userId: value.userId,
+        user_id: value.userId,
         type: value.type,
         channel: value.channel,
         subject,
         content,
-        appointmentId: value.appointmentId,
-        scheduledFor: value.scheduledFor,
+        appointment_id: value.appointmentId,
+        scheduled_for: value.scheduledFor,
         status: 'pending',
         priority: value.priority
       });
@@ -235,10 +224,6 @@ class NotificationController {
     }
   }
 
-  /**
-   * Resend notification
-   * POST /api/notifications/:id/resend
-   */
   static async resend(req, res, next) {
     try {
       const notificationId = req.params.id;
@@ -264,10 +249,10 @@ class NotificationController {
         .patch({
           status: 'pending',
           attempts: 0,
-          lastAttemptAt: null,
-          sentAt: null,
+          last_attempt_at: null,
+          sent_at: null,
           error: null,
-          updatedAt: new Date()
+          updated_at: new Date()
         });
 
       // Process immediately
@@ -286,10 +271,6 @@ class NotificationController {
     }
   }
 
-  /**
-   * Cancel scheduled notification
-   * DELETE /api/notifications/:id
-   */
   static async cancel(req, res, next) {
     try {
       const notificationId = req.params.id;
@@ -321,7 +302,7 @@ class NotificationController {
         .findById(notificationId)
         .patch({
           status: 'cancelled',
-          updatedAt: new Date()
+          updated_at: new Date()
         });
 
       res.json({
@@ -332,10 +313,6 @@ class NotificationController {
     }
   }
 
-  /**
-   * Get notification templates
-   * GET /api/notifications/templates
-   */
   static async getTemplates(req, res, next) {
     try {
       // Only admins can manage templates
@@ -356,7 +333,7 @@ class NotificationController {
         query = query.where('channel', channel);
       }
       if (isActive !== undefined) {
-        query = query.where('isActive', isActive === 'true');
+        query = query.where('is_active', isActive === 'true');
       }
 
       const templates = await query.orderBy('type', 'asc');
@@ -367,10 +344,6 @@ class NotificationController {
     }
   }
 
-  /**
-   * Create notification template
-   * POST /api/notifications/templates
-   */
   static async createTemplate(req, res, next) {
     try {
       // Only admins can manage templates
@@ -413,7 +386,7 @@ class NotificationController {
       const existing = await NotificationTemplate.query()
         .where('type', value.type)
         .where('channel', value.channel)
-        .where('isActive', true)
+        .where('is_active', true)
         .first();
 
       if (existing) {
@@ -447,10 +420,6 @@ class NotificationController {
     }
   }
 
-  /**
-   * Update notification template
-   * PUT /api/notifications/templates/:id
-   */
   static async updateTemplate(req, res, next) {
     try {
       // Only admins can manage templates
@@ -504,7 +473,7 @@ class NotificationController {
         .patchAndFetchById(templateId, {
           ...value,
           variables,
-          updatedAt: new Date()
+          updated_at: new Date()
         });
 
       res.json({
@@ -516,10 +485,6 @@ class NotificationController {
     }
   }
 
-  /**
-   * Delete notification template
-   * DELETE /api/notifications/templates/:id
-   */
   static async deleteTemplate(req, res, next) {
     try {
       // Only admins can manage templates
@@ -543,8 +508,8 @@ class NotificationController {
       await NotificationTemplate.query()
         .findById(templateId)
         .patch({
-          isActive: false,
-          updatedAt: new Date()
+          is_active: false,
+          updated_at: new Date()
         });
 
       res.json({
@@ -555,10 +520,6 @@ class NotificationController {
     }
   }
 
-  /**
-   * Get notification statistics
-   * GET /api/notifications/stats
-   */
   static async getStatistics(req, res, next) {
     try {
       // Only admins can view statistics
@@ -573,10 +534,10 @@ class NotificationController {
       let query = Notification.query();
 
       if (startDate) {
-        query = query.where('createdAt', '>=', startDate);
+        query = query.where('created_at', '>=', startDate);
       }
       if (endDate) {
-        query = query.where('createdAt', '<=', endDate);
+        query = query.where('created_at', '<=', endDate);
       }
 
       // Get statistics by status
@@ -614,8 +575,8 @@ class NotificationController {
       // Get average send time
       const avgSendTime = await query.clone()
         .where('status', 'sent')
-        .whereNotNull('sentAt')
-        .avg(Notification.raw('TIMESTAMPDIFF(SECOND, scheduledFor, sentAt) as avgSeconds'))
+        .whereNotNull('sent_at')
+        .avg(Notification.raw('TIMESTAMPDIFF(SECOND, scheduled_for, sent_at) as avgSeconds'))
         .first();
 
       res.json({
@@ -631,10 +592,6 @@ class NotificationController {
     }
   }
 
-  /**
-   * Test notification sending
-   * POST /api/notifications/test
-   */
   static async testNotification(req, res, next) {
     try {
       // Only admins can test notifications

@@ -1,0 +1,91 @@
+{
+  "enabled": [
+    "auth",
+    "booking",
+    "calendar",
+    "support",
+    "admin",
+    "notifications"
+  ],
+  "development": {
+    "hotReload": true,
+    "verbose": true,
+    "testPlugins": []
+  },
+  "production": {
+    "hotReload": false,
+    "verbose": false,
+    "monitoring": true
+  },
+  "plugins": {
+    "auth": {
+      "enabled": true,
+      "autoApprove": false,
+      "requireApproval": true,
+      "adminIds": ["7930798268"]
+    },
+    "booking": {
+      "enabled": true,
+      "maxSlotsPerDay": 50,
+      "advanceBookingDays": 14,
+      "minAdvanceHours": 2,
+      "businessHours": {
+        "start": "11:00",
+        "end": "18:00"
+      },
+      "timezone": "America/New_York"
+    },
+    "calendar": {
+      "enabled": true,
+      "displayMode": "month",
+      "showAvailability": true,
+      "mobileOptimized": true
+    },
+    "support": {
+      "enabled": true,
+      "ticketPrefix": "TKT",
+      "autoAssign": false,
+      "priorities": ["low", "medium", "high", "urgent"]
+    },
+    "admin": {
+      "enabled": true,
+      "commands": [
+        "users",
+        "stats",
+        "tickets",
+        "bookings",
+        "broadcast"
+      ]
+    },
+    "notifications": {
+      "enabled": true,
+      "channels": ["telegram"],
+      "reminders": true,
+      "confirmations": true
+    }
+  },
+  "featureToggles": {
+    "newRegistration": true,
+    "simActivation": true,
+    "technicalSupport": true,
+    "deviceUpgrade": true,
+    "liveSupport": false,
+    "broadcasting": false,
+    "analytics": false
+  },
+  "circuitBreaker": {
+    "threshold": 5,
+    "timeout": 60000,
+    "halfOpenRequests": 3
+  },
+  "rateLimit": {
+    "enabled": true,
+    "maxRequests": 100,
+    "windowMs": 60000
+  },
+  "monitoring": {
+    "healthCheckInterval": 30000,
+    "metricsInterval": 60000,
+    "errorReporting": true
+  }
+}

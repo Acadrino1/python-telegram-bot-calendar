@@ -6,10 +6,10 @@ services:
     container_name: appointment-scheduler-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword123
-      MYSQL_DATABASE: appointment_scheduler
-      MYSQL_USER: appuser
-      MYSQL_PASSWORD: apppassword123
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME:-appointment_scheduler}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
     ports:
       - "3306:3306"
     volumes:
@@ -21,28 +21,84 @@ services:
       timeout: 20s
       retries: 10
 
-  # Optional: Adminer for database management UI
-  adminer:
-    image: adminer:latest
-    container_name: appointment-scheduler-adminer
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    depends_on:
-      - mysql
-    environment:
-      ADMINER_DEFAULT_SERVER: mysql
+  # DEV ONLY - Comment out adminer in production!
+  # adminer:
+  #   image: adminer:latest
+  #   container_name: appointment-scheduler-adminer
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8080:8080"
+  #   depends_on:
+  #     - mysql
+  #   environment:
+  #     ADMINER_DEFAULT_SERVER: mysql
 
-  # Optional: Redis for caching
+  # Redis for caching
   redis:
     image: redis:7-alpine
     container_name: appointment-scheduler-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    # Port 6379 not exposed externally - Redis only used internally
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: appointment-scheduler-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DB_CLIENT: mysql2
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-appointment_scheduler}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: appointment-scheduler-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DB_CLIENT: mysql2
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-appointment_scheduler}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ENABLE_PAYMENTS: ${ENABLE_PAYMENTS:-false}
+      APPOINTMENT_PRICE_CAD: ${APPOINTMENT_PRICE_CAD:-250}
+      MONEROPAY_URL: ${MONEROPAY_URL:-http://localhost:5000}
+    command: ["npm", "run", "start:bot"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      app:
+        condition: service_started
 
 volumes:
   mysql_data:

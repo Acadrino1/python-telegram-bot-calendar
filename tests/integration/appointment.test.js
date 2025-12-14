@@ -24,6 +24,11 @@ describe('Appointment Integration Tests', () => {
       useNullAsDefault: true
     };
     
+    // Fix migration directory path
+    if (knexConfig.migrations && knexConfig.migrations.directory) {
+      knexConfig.migrations.directory = knexConfig.migrations.directory.replace('./database/migrations', './database/migrations');
+    }
+    
     knex = Knex(knexConfig);
     Model.knex(knex);
 
@@ -442,7 +447,7 @@ describe('Appointment Integration Tests', () => {
       });
     });
 
-    it('should not allow client to access other client\\'s appointment', async () => {
+    it('should not allow client to access other client\'s appointment', async () => {
       const response = await request(app.app)
         .get(`/api/appointments/${clientAppointment.uuid}`)
         .set('Authorization', `Bearer ${otherClientToken}`);

@@ -1,0 +1,63 @@
+BULK REGISTRATION TEMPLATE STRUCTURE
+=====================================
+
+The Excel template has 13 columns and 21 rows (1 header + 20 data rows):
+
+ROW 1 - HEADER ROW:
+-------------------
+| First Name | Middle Name | Last Name | Date of Birth | Street Number | Suite/Unit | Street Address | City | Province | Postal Code | Driver's License # | DL Issue Date | DL Expiry Date |
+
+ROWS 2-21 - YOUR DATA (20 empty rows to fill in):
+-------------------------------------------------
+| [fill in] | [optional] | [fill in] | [MM/DD/YYYY] | [fill in] | [optional] | [fill in] | [fill in] | [2-letter] | [A1B 2C3] | [optional] | [optional] | [optional] |
+| [fill in] | [optional] | [fill in] | [MM/DD/YYYY] | [fill in] | [optional] | [fill in] | [fill in] | [2-letter] | [A1B 2C3] | [optional] | [optional] | [optional] |
+| ... (18 more empty rows) ...
+
+
+HOW IT WORKS:
+-------------
+- Fill in as many rows as you need (1 to 20 customers)
+- Empty rows are automatically ignored
+- Only rows with a First Name are processed
+
+
+REQUIRED COLUMNS:
+-----------------
+* First Name
+* Last Name
+* Date of Birth (format: MM/DD/YYYY)
+* Street Number
+* Street Address
+* City
+* Province (2-letter code: AB, BC, MB, NB, NL, NT, NS, NU, ON, PE, QC, SK, YT)
+* Postal Code (format: A1B 2C3)
+
+OPTIONAL COLUMNS:
+-----------------
+* Middle Name
+* Suite/Unit
+* Driver's License #
+* DL Issue Date (format: MM/DD/YYYY)
+* DL Expiry Date (format: MM/DD/YYYY)
+
+
+COLUMN WIDTHS:
+--------------
+First Name:       15 chars
+Middle Name:      15 chars
+Last Name:        15 chars
+Date of Birth:    15 chars
+Street Number:    12 chars
+Suite/Unit:       12 chars
+Street Address:   20 chars
+City:             15 chars
+Province:         10 chars
+Postal Code:      12 chars
+Driver's License: 18 chars
+DL Issue Date:    15 chars
+DL Expiry Date:   15 chars
+
+
+EXAMPLE FILLED ROW:
+-------------------
+| Jane | Marie | Doe | 03/22/1985 | 456 | Apt 12 | Oak Avenue | Vancouver | BC | V6B 1K3 | | | |

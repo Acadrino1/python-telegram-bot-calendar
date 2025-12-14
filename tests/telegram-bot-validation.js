@@ -549,7 +549,7 @@ Contact @support or call 1-800-APPOINTMENT
 
   describe('Security Validation', () => {
     test('TG-030: Bot rejects exposed/vulnerable tokens', () => {
-      const vulnerableToken = '8124276494:AAEXy61BMBQcrz6TCCNHRI3_4d6fbXERy8M';
+      const vulnerableToken = 'TELEGRAM_BOT_TOKEN_PLACEHOLDER';
       
       // Should be blocked by security patches
       expect(() => {

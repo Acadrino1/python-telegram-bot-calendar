@@ -1,0 +1,202 @@
+# Artillery.js Load Testing Configuration
+config:
+  target: 'http://localhost:3000'
+  phases:
+    # Warm-up phase
+    - duration: 60
+      arrivalRate: 5
+      name: "Warm-up"
+    
+    # Ramp-up phase
+    - duration: 300
+      arrivalRate: 5
+      rampTo: 50
+      name: "Ramp-up load"
+    
+    # Sustained load phase
+    - duration: 600
+      arrivalRate: 50
+      name: "Sustained load"
+    
+    # Peak load phase
+    - duration: 180
+      arrivalRate: 50
+      rampTo: 100
+      name: "Peak load"
+    
+    # Cool-down phase
+    - duration: 120
+      arrivalRate: 100
+      rampTo: 5
+      name: "Cool-down"
+
+  payload:
+    path: "tests/performance/test-data.csv"
+    fields:
+      - "email"
+      - "password"
+      - "first_name"
+      - "last_name"
+      - "phone_number"
+  
+  variables:
+    adminEmail: "admin@example.com"
+    adminPassword: "adminpassword"
+  
+  processor: "./tests/performance/processors.js"
+
+scenarios:
+  # User Authentication Flow
+  - name: "User Authentication"
+    weight: 30
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            email: "{{ email }}"
+            password: "{{ password }}"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+          expect:
+            - statusCode: [200, 401]
+      
+      - get:
+          url: "/api/user/profile"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: [200, 401]
+
+  # Admin Dashboard Operations
+  - name: "Admin Dashboard"
+    weight: 20
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            email: "{{ adminEmail }}"
+            password: "{{ adminPassword }}"
+          capture:
+            - json: "$.token"
+              as: "adminToken"
+      
+      - get:
+          url: "/api/admin/dashboard"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+          expect:
+            - statusCode: 200
+            - hasProperty: "totalUsers"
+            - hasProperty: "totalAppointments"
+      
+      - get:
+          url: "/api/admin/analytics"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+          expect:
+            - statusCode: 200
+      
+      - get:
+          url: "/api/admin/users?page=1&limit=10"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+          expect:
+            - statusCode: 200
+            - hasProperty: "users"
+            - hasProperty: "pagination"
+
+  # User Management Operations
+  - name: "User Management"
+    weight: 25
+    flow:
+      - function: "authenticateAsAdmin"
+      
+      - get:
+          url: "/api/admin/users?page={{ $randomInt(1, 5) }}&limit=20"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+          expect:
+            - statusCode: 200
+      
+      - get:
+          url: "/api/admin/users/search?query={{ first_name }}"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+          expect:
+            - statusCode: 200
+      
+      - get:
+          url: "/api/admin/users/{{ $randomInt(1, 100) }}"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+          expect:
+            - statusCode: [200, 404]
+
+  # Appointment Management Operations  
+  - name: "Appointment Management"
+    weight: 25
+    flow:
+      - function: "authenticateAsAdmin"
+      
+      - get:
+          url: "/api/admin/appointments?status=scheduled&page=1&limit=15"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+          expect:
+            - statusCode: 200
+      
+      - get:
+          url: "/api/admin/appointments?service_type=consultation"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+          expect:
+            - statusCode: 200
+      
+      - put:
+          url: "/api/admin/appointments/{{ $randomInt(1, 50) }}"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+          json:
+            status: "confirmed"
+            notes: "Load test update"
+          expect:
+            - statusCode: [200, 404]
+
+# Performance thresholds and monitoring
+expect:
+  # Response time expectations
+  - p95: 1000  # 95% of requests should complete within 1 second
+  - p99: 2000  # 99% of requests should complete within 2 seconds
+  - median: 500  # Median response time should be under 500ms
+  
+  # Error rate expectations
+  - maxErrorRate: 5  # Maximum 5% error rate
+  
+  # Throughput expectations
+  - minRPS: 40  # Minimum 40 requests per second during sustained load
+
+# Custom metrics to track
+metrics:
+  - name: "auth_success_rate"
+    expression: "stats.successfulAuthentications / stats.totalAuthentications * 100"
+  
+  - name: "database_response_time"
+    expression: "stats.databaseQueryTime.median"
+  
+  - name: "admin_dashboard_load_time"
+    expression: "stats.adminDashboardRequests.median"
+
+# Monitoring and alerting
+monitor:
+  - expression: "stats.codes.500 > 10"
+    action: "alert"
+    message: "High number of 500 errors detected"
+  
+  - expression: "stats.latency.median > 1000"
+    action: "alert"
+    message: "High median response time detected"
+  
+  - expression: "stats.errors > stats.requests * 0.1"
+    action: "alert"
+    message: "Error rate exceeding 10%"

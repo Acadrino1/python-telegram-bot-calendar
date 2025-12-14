@@ -1,0 +1,112 @@
+# MoneroPay Payment Gateway for Lodge Scheduler
+# Based on official https://github.com/moneropay/moneropay/blob/master/docker-compose.yaml
+#
+# Auto-creates wallet on first run using --wallet-dir mode
+#
+# Run with: docker-compose -f docker-compose.moneropay.yml up -d
+
+services:
+  # Init container to fix wallet directory permissions
+  change-vol-ownership:
+    image: alpine:latest
+    container_name: lodge-wallet-init
+    volumes:
+      - wallet_data:/mnt/wallet
+    command: chown -R 1000:1000 /mnt/wallet
+
+  # Monero Wallet RPC - auto-creates wallet in wallet-dir mode
+  monero-wallet-rpc:
+    image: ghcr.io/sethforprivacy/simple-monero-wallet-rpc:latest
+    container_name: lodge-monero-wallet-rpc
+    restart: unless-stopped
+    volumes:
+      - wallet_data:/home/monero/wallet
+    entrypoint: ["monero-wallet-rpc"]
+    command:
+      - --wallet-dir=/home/monero/wallet
+      - --disable-rpc-login
+      - --rpc-bind-port=28081
+      - --daemon-host=${MONERO_DAEMON_HOST:-nodes.hashvault.pro}
+      - --daemon-port=${MONERO_DAEMON_PORT:-18081}
+      - --trusted-daemon
+      - --confirm-external-bind
+      - --rpc-bind-ip=0.0.0.0
+    depends_on:
+      change-vol-ownership:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -X POST http://localhost:28081/json_rpc -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"get_version\"}' | grep -q result"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # PostgreSQL for MoneroPay
+  moneropay-db:
+    image: postgres:17-alpine
+    container_name: lodge-moneropay-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${MONEROPAY_DB_USER:-moneropay}
+      POSTGRES_PASSWORD: ${MONEROPAY_DB_PASSWORD:-moneropay_secret}
+      POSTGRES_DB: ${MONEROPAY_DB_NAME:-moneropay}
+    volumes:
+      - moneropay_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MONEROPAY_DB_USER:-moneropay}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Wallet initialization - creates/opens wallet file
+  wallet-init:
+    image: curlimages/curl:latest
+    container_name: lodge-wallet-creator
+    depends_on:
+      monero-wallet-rpc:
+        condition: service_healthy
+    restart: "no"
+    command: >
+      sh -c '
+        echo "Creating wallet lodge_primary...";
+        curl -X POST http://monero-wallet-rpc:28081/json_rpc \
+          -H "Content-Type: application/json" \
+          -d "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"create_wallet\",\"params\":{\"filename\":\"lodge_primary\",\"password\":\"\",\"language\":\"English\"}}" \
+          && echo "Wallet created" \
+          || echo "Wallet already exists";
+        echo "Opening wallet...";
+        curl -X POST http://monero-wallet-rpc:28081/json_rpc \
+          -H "Content-Type: application/json" \
+          -d "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"open_wallet\",\"params\":{\"filename\":\"lodge_primary\",\"password\":\"\"}}" \
+          && echo "Wallet opened successfully" \
+          || echo "Failed to open wallet";
+      '
+
+  # MoneroPay Gateway
+  moneropay:
+    image: registry.gitlab.com/moneropay/moneropay:v2
+    container_name: lodge-moneropay
+    restart: unless-stopped
+    ports:
+      - "${MONEROPAY_PORT:-5000}:5000"
+    environment:
+      - RPC_ADDRESS=http://monero-wallet-rpc:28081/json_rpc
+      - POSTGRESQL=postgresql://${MONEROPAY_DB_USER:-moneropay}:${MONEROPAY_DB_PASSWORD:-moneropay_secret}@moneropay-db:5432/${MONEROPAY_DB_NAME:-moneropay}?sslmode=disable
+      - BIND_ADDR=0.0.0.0:5000
+      - ZERO_CONF=${MONEROPAY_ZERO_CONF:-true}
+      - WEBHOOK_URL=${MONEROPAY_WEBHOOK_URL:-http://host.docker.internal:3000/api/payments/webhook}
+    depends_on:
+      wallet-init:
+        condition: service_completed_successfully
+      moneropay-db:
+        condition: service_healthy
+
+volumes:
+  wallet_data:
+    driver: local
+  moneropay_db_data:
+    driver: local
+
+networks:
+  default:
+    name: lodge-payment-network

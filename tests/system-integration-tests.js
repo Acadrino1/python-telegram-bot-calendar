@@ -6,12 +6,12 @@
 const request = require('supertest');
 const { Model } = require('objection');
 const Knex = require('knex');
-const TelegramBot = require('../src/bot/TelegramBot');
+const SimpleTelegramBot = require('../src/bot/SimpleTelegramBot');
 const app = require('../src/index');
 const User = require('../src/models/User');
 const Service = require('../src/models/Service');
 const Appointment = require('../src/models/Appointment');
-const BookingService = require('../src/services/BookingService');
+const BookingSlotService = require('../src/services/BookingSlotService');
 const AvailabilityService = require('../src/services/AvailabilityService');
 const NotificationService = require('../src/services/NotificationService');
 

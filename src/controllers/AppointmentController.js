@@ -4,6 +4,7 @@ const Joi = require('joi');
 const moment = require('moment-timezone');
 
 const Appointment = require('../models/Appointment');
+const BookingSlotService = require('../services/BookingSlotService');
 const BookingService = require('../services/BookingService');
 const { asyncHandler, ValidationError, NotFoundError } = require('../middleware/errorHandler');
 const { checkAppointmentAccess, providerOrAdmin } = require('../middleware/auth');
@@ -30,11 +31,6 @@ const cancelAppointmentSchema = Joi.object({
   reason: Joi.string().max(500).allow('', null)
 });
 
-/**
- * @route   GET /api/appointments
- * @desc    Get appointments for the authenticated user
- * @access  Private
- */
 router.get('/', asyncHandler(async (req, res) => {
   const {
     status,
@@ -113,11 +109,6 @@ router.get('/', asyncHandler(async (req, res) => {
   });
 }));
 
-/**
- * @route   GET /api/appointments/:uuid
- * @desc    Get a specific appointment
- * @access  Private
- */
 router.get('/:uuid', checkAppointmentAccess, asyncHandler(async (req, res) => {
   const appointment = await Appointment.query()
     .findOne('uuid', req.params.uuid)
@@ -136,11 +127,6 @@ router.get('/:uuid', checkAppointmentAccess, asyncHandler(async (req, res) => {
   res.json({ appointment });
 }));
 
-/**
- * @route   POST /api/appointments
- * @desc    Book a new appointment
- * @access  Private (Clients only)
- */
 router.post('/', asyncHandler(async (req, res) => {
   // Only clients can book appointments
   if (req.user.role !== 'client') {
@@ -160,7 +146,8 @@ router.post('/', asyncHandler(async (req, res) => {
     client_id: req.user.id
   };
 
-  const result = await BookingService.bookAppointment(bookingData);
+  const bookingService = new BookingService();
+  const result = await bookingService.bookAppointment(bookingData);
 
   logger.logBookingAttempt(
     req.user.id,
@@ -187,11 +174,6 @@ router.post('/', asyncHandler(async (req, res) => {
   }
 }));
 
-/**
- * @route   PUT /api/appointments/:uuid
- * @desc    Update an appointment
- * @access  Private
- */
 router.put('/:uuid', checkAppointmentAccess, asyncHandler(async (req, res) => {
   const { error, value } = updateAppointmentSchema.validate(req.body);
   if (error) {
@@ -204,7 +186,8 @@ router.put('/:uuid', checkAppointmentAccess, asyncHandler(async (req, res) => {
   // Handle different types of updates
   if (updateData.appointment_datetime && updateData.appointment_datetime !== appointment.appointment_datetime) {
     // Reschedule appointment
-    const result = await BookingService.rescheduleAppointment(
+    const bookingService = new BookingService();
+    const result = await bookingService.rescheduleAppointment(
       appointment.uuid,
       updateData.appointment_datetime,
       req.user.id,
@@ -234,11 +217,13 @@ router.put('/:uuid', checkAppointmentAccess, asyncHandler(async (req, res) => {
 
     switch (updateData.status) {
       case 'confirmed':
-        result = await BookingService.confirmAppointment(appointment.uuid, req.user.id);
+        const bookingService = new BookingService();
+        result = await bookingService.confirmAppointment(appointment.uuid, req.user.id);
         break;
       
       case 'completed':
-        result = await BookingService.completeAppointment(
+        const bookingServiceCompleted = new BookingService();
+        result = await bookingServiceCompleted.completeAppointment(
           appointment.uuid, 
           req.user.id, 
           updateData.provider_notes
@@ -312,11 +297,6 @@ router.put('/:uuid', checkAppointmentAccess, asyncHandler(async (req, res) => {
   }
 }));
 
-/**
- * @route   DELETE /api/appointments/:uuid
- * @desc    Cancel an appointment
- * @access  Private
- */
 router.delete('/:uuid', checkAppointmentAccess, asyncHandler(async (req, res) => {
   const { error, value } = cancelAppointmentSchema.validate(req.body);
   if (error) {
@@ -325,7 +305,8 @@ router.delete('/:uuid', checkAppointmentAccess, asyncHandler(async (req, res) =>
 
   const appointment = req.appointment;
 
-  const result = await BookingService.cancelAppointment(
+  const bookingService = new BookingService();
+  const result = await bookingService.cancelAppointment(
     appointment.uuid,
     req.user.id,
     value.reason
@@ -348,11 +329,6 @@ router.delete('/:uuid', checkAppointmentAccess, asyncHandler(async (req, res) =>
   }
 }));
 
-/**
- * @route   GET /api/appointments/:uuid/history
- * @desc    Get appointment history
- * @access  Private
- */
 router.get('/:uuid/history', checkAppointmentAccess, asyncHandler(async (req, res) => {
   const AppointmentHistory = require('../models/AppointmentHistory');
   
@@ -361,15 +337,11 @@ router.get('/:uuid/history', checkAppointmentAccess, asyncHandler(async (req, re
   res.json({ history });
 }));
 
-/**
- * @route   POST /api/appointments/:uuid/confirm
- * @desc    Confirm an appointment
- * @access  Private (Providers and Admins)
- */
 router.post('/:uuid/confirm', checkAppointmentAccess, providerOrAdmin, asyncHandler(async (req, res) => {
   const appointment = req.appointment;
 
-  const result = await BookingService.confirmAppointment(appointment.uuid, req.user.id);
+  const bookingService = new BookingService();
+  const result = await bookingService.confirmAppointment(appointment.uuid, req.user.id);
 
   if (result.success) {
     logger.logAppointmentAction('confirmed', appointment.id, req.user.id);
@@ -386,11 +358,6 @@ router.post('/:uuid/confirm', checkAppointmentAccess, providerOrAdmin, asyncHand
   }
 }));
 
-/**
- * @route   POST /api/appointments/:uuid/start
- * @desc    Start an appointment
- * @access  Private (Providers and Admins)
- */
 router.post('/:uuid/start', checkAppointmentAccess, providerOrAdmin, asyncHandler(async (req, res) => {
   const appointment = req.appointment;
 
@@ -408,16 +375,12 @@ router.post('/:uuid/start', checkAppointmentAccess, providerOrAdmin, asyncHandle
   });
 }));
 
-/**
- * @route   POST /api/appointments/:uuid/complete
- * @desc    Complete an appointment
- * @access  Private (Providers and Admins)
- */
 router.post('/:uuid/complete', checkAppointmentAccess, providerOrAdmin, asyncHandler(async (req, res) => {
   const { provider_notes } = req.body;
   const appointment = req.appointment;
 
-  const result = await BookingService.completeAppointment(
+  const bookingService = new BookingService();
+  const result = await bookingService.completeAppointment(
     appointment.uuid,
     req.user.id,
     provider_notes
@@ -440,11 +403,6 @@ router.post('/:uuid/complete', checkAppointmentAccess, providerOrAdmin, asyncHan
   }
 }));
 
-/**
- * @route   POST /api/appointments/:uuid/no-show
- * @desc    Mark appointment as no-show
- * @access  Private (Providers and Admins)
- */
 router.post('/:uuid/no-show', checkAppointmentAccess, providerOrAdmin, asyncHandler(async (req, res) => {
   const appointment = req.appointment;
 

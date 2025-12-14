@@ -1,6 +1,9 @@
 # Use Node.js 18 LTS
 FROM node:18-alpine
 
+# Install build dependencies for native modules (bcrypt, sqlite3)
+RUN apk add --no-cache curl python3 make g++
+
 # Set working directory
 WORKDIR /app
 
@@ -11,7 +14,7 @@ RUN addgroup -g 1001 -S nodejs && \
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
+# Install dependencies (rebuild native modules for Alpine Linux)
 RUN npm ci --only=production && npm cache clean --force
 
 # Copy application code
@@ -19,9 +22,6 @@ COPY . .
 
 # Create logs directory
 RUN mkdir -p logs && chown -R nodejs:nodejs logs
-
-# Copy environment file
-COPY .env.example .env
 
 # Set proper permissions
 RUN chown -R nodejs:nodejs /app
@@ -32,9 +32,9 @@ USER nodejs
 # Expose port
 EXPOSE 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node healthcheck.js
+# Health check - using node process check since bot doesn't have HTTP endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD pgrep -f "node" || exit 1
 
-# Start the application
-CMD ["npm", "start"]
+# Start the bot by default (use docker-compose to override if needed)
+CMD ["npm", "run", "start:bot"]

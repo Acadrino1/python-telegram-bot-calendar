@@ -8,17 +8,17 @@ class AvailabilitySchedule extends Model {
   static get jsonSchema() {
     return {
       type: 'object',
-      required: ['providerId'],
+      required: ['provider_id'],
       properties: {
         id: { type: 'integer' },
-        providerId: { type: 'integer' },
+        provider_id: { type: 'integer' },
         timezone: { type: 'string', default: 'America/New_York' },
-        regularHours: { type: 'object' },
-        slotDuration: { type: 'integer', default: 30 },
-        bufferTime: { type: 'integer', default: 0 },
-        isActive: { type: 'boolean', default: true },
-        createdAt: { type: 'string', format: 'date-time' },
-        updatedAt: { type: 'string', format: 'date-time' }
+        regular_hours: { type: 'object' },
+        slot_duration: { type: 'integer', default: 30 },
+        buffer_time: { type: 'integer', default: 0 },
+        is_active: { type: 'boolean', default: true },
+        created_at: { type: 'string', format: 'date-time' },
+        updated_at: { type: 'string', format: 'date-time' }
       }
     };
   }
@@ -31,7 +31,7 @@ class AvailabilitySchedule extends Model {
         relation: Model.BelongsToOneRelation,
         modelClass: User,
         join: {
-          from: 'availability_schedules.providerId',
+          from: 'availability_schedules.provider_id',
           to: 'users.id'
         }
       }
@@ -39,12 +39,12 @@ class AvailabilitySchedule extends Model {
   }
 
   $beforeInsert() {
-    this.createdAt = new Date().toISOString();
-    this.updatedAt = new Date().toISOString();
+    this.created_at = new Date().toISOString();
+    this.updated_at = new Date().toISOString();
   }
 
   $beforeUpdate() {
-    this.updatedAt = new Date().toISOString();
+    this.updated_at = new Date().toISOString();
   }
 }
 

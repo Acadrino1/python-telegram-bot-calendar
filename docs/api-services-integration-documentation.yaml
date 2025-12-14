@@ -1,0 +1,1214 @@
+openapi: 3.0.0
+info:
+  title: Lodge Scheduler - External Services & Integrations API
+  version: 1.0.0
+  description: |
+    Complete API documentation for all external services and integrations used in the Lodge Scheduler project.
+    This includes authentication services, middleware stack, notification services, monitoring systems, 
+    third-party libraries, and Telegram bot integrations.
+    
+    ## Service Integration Architecture
+    
+    The Lodge Scheduler implements a comprehensive service integration architecture with the following key components:
+    
+    - **Authentication & Security Layer**: JWT-based auth with bcrypt, RBAC, session management
+    - **Middleware Stack**: Express.js with CORS, Helmet, rate limiting, input validation
+    - **Notification Services**: Email (Nodemailer), SMS (Twilio), Telegram notifications
+    - **Monitoring & Logging**: Winston logger, error tracking, audit logging, performance monitoring
+    - **Database Layer**: MySQL/SQLite with Knex.js and Objection.js ORM
+    - **Telegram Integration**: Comprehensive bot with booking, notifications, and customer management
+    - **Caching & Performance**: LRU cache, Redis support, bottleneck rate limiting
+    - **Task Scheduling**: Node-cron for automated tasks and reminders
+    
+  contact:
+    name: Lodge Scheduler API Support
+    email: support@lodgescheduler.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.lodgescheduler.com/v1
+    description: Production server
+  - url: https://staging-api.lodgescheduler.com/v1
+    description: Staging server
+  - url: http://localhost:3000
+    description: Development server
+
+tags:
+  - name: Authentication Services
+    description: JWT authentication, session management, RBAC
+  - name: Notification Services
+    description: Email, SMS, and Telegram notification integrations
+  - name: Security Middleware
+    description: Rate limiting, input validation, security headers
+  - name: Telegram Bot Integration
+    description: Comprehensive Telegram bot functionality
+  - name: Monitoring & Logging
+    description: System monitoring, audit logs, error tracking
+  - name: Third-Party Services
+    description: External service integrations (Twilio, Nodemailer, etc.)
+  - name: Performance & Caching
+    description: Caching strategies, performance optimization
+  - name: Database Services
+    description: Database connectivity, ORM operations, migrations
+
+security:
+  - ApiKeyAuth: []
+  - BearerAuth: []
+  - TelegramBotAuth: []
+
+paths:
+  # ========================
+  # Authentication Services
+  # ========================
+  /auth/login:
+    post:
+      tags:
+        - Authentication Services
+      summary: User authentication with JWT token generation
+      description: |
+        Authenticates user credentials and returns JWT token for API access.
+        Implements bcrypt password hashing and rate limiting protection.
+        
+        **Security Features:**
+        - Password hashing with bcrypt (salt rounds: 12)
+        - JWT token with configurable expiration
+        - Rate limiting: 10 attempts per 15 minutes per IP
+        - Account lockout after failed attempts
+        - Audit logging for security events
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: User email address
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                  description: User password (will be hashed with bcrypt)
+                  example: SecurePassword123!
+            examples:
+              valid_login:
+                summary: Valid login attempt
+                value:
+                  email: john.doe@example.com
+                  password: MySecurePassword123!
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  token:
+                    type: string
+                    description: JWT access token
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                  user:
+                    $ref: '#/components/schemas/UserProfile'
+                  expires_in:
+                    type: integer
+                    description: Token expiration in seconds
+                    example: 86400
+              examples:
+                successful_login:
+                  summary: Successful login response
+                  value:
+                    success: true
+                    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjEsImVtYWlsIjoiam9obi5kb2VAZXhhbXBsZS5jb20iLCJyb2xlIjoiY2xpZW50IiwiaWF0IjoxNjMwMDAwMDAwLCJleHAiOjE2MzAwODY0MDB9.signature
+                    user:
+                      id: 1
+                      email: john.doe@example.com
+                      role: client
+                      first_name: John
+                      last_name: Doe
+                    expires_in: 86400
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid_credentials:
+                  summary: Invalid credentials
+                  value:
+                    error: "Invalid credentials"
+                    code: "AUTH_FAILED"
+                    message: "Email or password is incorrect"
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+
+  /auth/register:
+    post:
+      tags:
+        - Authentication Services
+      summary: User registration with account validation
+      description: |
+        Creates new user account with comprehensive validation and security measures.
+        
+        **Security Features:**
+        - Input validation with Joi schemas
+        - Password strength requirements
+        - Email uniqueness validation
+        - Account activation workflow
+        - Rate limiting protection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegistration'
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Registration successful
+                  user_id:
+                    type: integer
+                    example: 123
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  # ========================
+  # Notification Services
+  # ========================
+  /notifications/send:
+    post:
+      tags:
+        - Notification Services
+      summary: Send multi-channel notifications
+      description: |
+        Sends notifications via multiple channels (email, SMS, Telegram) with template processing
+        and delivery tracking.
+        
+        **Supported Channels:**
+        - Email via Nodemailer with SMTP
+        - SMS via Twilio API
+        - Telegram via Bot API
+        - Push notifications (planned)
+        
+        **Features:**
+        - Template-based message formatting
+        - Retry mechanism with exponential backoff
+        - Delivery status tracking
+        - Batch processing support
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - recipient
+                - type
+                - template
+              properties:
+                recipient:
+                  type: string
+                  description: Recipient identifier (email, phone, telegram_id)
+                  example: user@example.com
+                type:
+                  type: string
+                  enum: [email, sms, telegram]
+                  description: Notification channel
+                template:
+                  type: string
+                  description: Template name for notification
+                  example: appointment_confirmation
+                data:
+                  type: object
+                  description: Template data for personalization
+                  example:
+                    customer_name: John Doe
+                    appointment_date: 2024-01-15
+                    appointment_time: "10:00 AM"
+                scheduled_for:
+                  type: string
+                  format: date-time
+                  description: Schedule notification for future delivery
+                priority:
+                  type: string
+                  enum: [low, medium, high, urgent]
+                  default: medium
+      responses:
+        '202':
+          description: Notification queued successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  notification_id:
+                    type: string
+                    example: notif_123456789
+                  status:
+                    type: string
+                    example: queued
+                  estimated_delivery:
+                    type: string
+                    format: date-time
+                    example: 2024-01-15T10:00:00Z
+
+  /notifications/status/{notification_id}:
+    get:
+      tags:
+        - Notification Services
+      summary: Get notification delivery status
+      description: |
+        Retrieves the current status of a notification including delivery attempts,
+        errors, and final delivery confirmation.
+      parameters:
+        - name: notification_id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: notif_123456789
+      responses:
+        '200':
+          description: Notification status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationStatus'
+
+  # ========================
+  # Telegram Bot Integration
+  # ========================
+  /telegram/webhook:
+    post:
+      tags:
+        - Telegram Bot Integration
+      summary: Telegram webhook endpoint
+      description: |
+        Receives updates from Telegram Bot API including messages, callback queries,
+        and inline queries. Implements comprehensive bot functionality for appointment scheduling.
+        
+        **Bot Features:**
+        - Interactive appointment booking
+        - Service selection with inline keyboards
+        - Calendar-based date selection
+        - Customer registration forms
+        - Real-time availability checking
+        - Appointment confirmations and reminders
+        - Support ticket system
+        - Multi-language support
+        
+        **Security:**
+        - Webhook signature validation
+        - Rate limiting protection
+        - Input sanitization
+        - Bot token validation
+      security:
+        - TelegramBotAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramUpdate'
+      responses:
+        '200':
+          description: Update processed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+        '400':
+          description: Invalid update format
+        '401':
+          description: Unauthorized webhook request
+        '429':
+          description: Rate limit exceeded
+
+  /telegram/send-message:
+    post:
+      tags:
+        - Telegram Bot Integration
+      summary: Send message via Telegram bot
+      description: |
+        Sends messages to Telegram users with support for rich formatting,
+        inline keyboards, and media attachments.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - chat_id
+                - text
+              properties:
+                chat_id:
+                  type: integer
+                  description: Telegram chat ID
+                  example: 123456789
+                text:
+                  type: string
+                  description: Message text (supports Markdown)
+                  example: "*Appointment Confirmed*\n\nYour appointment is scheduled for tomorrow at 2:00 PM"
+                parse_mode:
+                  type: string
+                  enum: [Markdown, HTML]
+                  default: Markdown
+                reply_markup:
+                  type: object
+                  description: Inline keyboard markup
+                disable_notification:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Message sent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message_id:
+                    type: integer
+                    example: 12345
+
+  # ========================
+  # Security & Rate Limiting
+  # ========================
+  /security/rate-limit-status:
+    get:
+      tags:
+        - Security Middleware
+      summary: Get rate limit status for client
+      description: |
+        Returns current rate limit status for the requesting client including
+        remaining requests, reset time, and applied limits.
+        
+        **Rate Limiting Configuration:**
+        - General API: 100 requests per 15 minutes
+        - Authentication: 10 attempts per 15 minutes
+        - Booking: 10 requests per hour
+        - Telegram webhook: 30 requests per minute
+        - API key based: 1000 requests per 15 minutes
+      responses:
+        '200':
+          description: Rate limit status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  limit:
+                    type: integer
+                    description: Maximum requests allowed
+                    example: 100
+                  remaining:
+                    type: integer
+                    description: Remaining requests in current window
+                    example: 85
+                  reset:
+                    type: integer
+                    description: Unix timestamp when limit resets
+                    example: 1640995200
+                  retry_after:
+                    type: integer
+                    description: Seconds until limit resets
+                    example: 300
+
+  # ========================
+  # System Monitoring
+  # ========================
+  /monitoring/health:
+    get:
+      tags:
+        - Monitoring & Logging
+      summary: System health check endpoint
+      description: |
+        Comprehensive health check including database connectivity, external service status,
+        and system metrics.
+        
+        **Health Checks:**
+        - Database connection status
+        - Email service availability
+        - SMS service (Twilio) status
+        - Telegram bot API connectivity
+        - Memory usage and performance metrics
+        - Cache system status
+      responses:
+        '200':
+          description: System is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: 2024-01-15T10:00:00Z
+                  uptime:
+                    type: number
+                    description: System uptime in seconds
+                    example: 86400
+                  checks:
+                    type: object
+                    properties:
+                      database:
+                        $ref: '#/components/schemas/HealthCheck'
+                      email_service:
+                        $ref: '#/components/schemas/HealthCheck'
+                      sms_service:
+                        $ref: '#/components/schemas/HealthCheck'
+                      telegram_bot:
+                        $ref: '#/components/schemas/HealthCheck'
+                      cache_system:
+                        $ref: '#/components/schemas/HealthCheck'
+                  metrics:
+                    $ref: '#/components/schemas/SystemMetrics'
+
+  /monitoring/metrics:
+    get:
+      tags:
+        - Monitoring & Logging
+      summary: System performance metrics
+      description: |
+        Returns detailed system performance metrics including API response times,
+        error rates, notification delivery statistics, and resource usage.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: System metrics retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemMetrics'
+
+  # ========================
+  # Third-Party Service Status
+  # ========================
+  /services/email/status:
+    get:
+      tags:
+        - Third-Party Services
+      summary: Email service (Nodemailer) status
+      description: |
+        Checks email service connectivity and configuration status.
+        
+        **SMTP Configuration:**
+        - Host: Configurable SMTP server
+        - Port: 587 (STARTTLS) or 465 (SSL)
+        - Authentication: Username/password
+        - Connection pooling: Enabled
+        - Retry mechanism: 3 attempts with exponential backoff
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Email service status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceStatus'
+
+  /services/sms/status:
+    get:
+      tags:
+        - Third-Party Services
+      summary: SMS service (Twilio) status
+      description: |
+        Checks Twilio SMS service connectivity and account status.
+        
+        **Twilio Configuration:**
+        - Account SID validation
+        - Auth token verification
+        - Phone number validation
+        - Message queue status
+        - Delivery webhook setup
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: SMS service status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceStatus'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service authentication
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token for user authentication
+    TelegramBotAuth:
+      type: http
+      scheme: bearer
+      description: Telegram bot token validation
+
+  schemas:
+    # ========================
+    # Core Data Models
+    # ========================
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        role:
+          type: string
+          enum: [client, provider, admin]
+          example: client
+        first_name:
+          type: string
+          example: John
+        last_name:
+          type: string
+          example: Doe
+        phone:
+          type: string
+          example: +1234567890
+        timezone:
+          type: string
+          example: America/New_York
+        is_active:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+          example: 2024-01-15T10:00:00Z
+
+    UserRegistration:
+      type: object
+      required:
+        - email
+        - password
+        - first_name
+        - last_name
+        - role
+      properties:
+        email:
+          type: string
+          format: email
+          description: Must be unique
+          example: newuser@example.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+          description: Minimum 8 characters with mixed case and numbers
+          example: SecurePass123!
+        first_name:
+          type: string
+          maxLength: 50
+          example: Jane
+        last_name:
+          type: string
+          maxLength: 50
+          example: Smith
+        phone:
+          type: string
+          pattern: '^\+[1-9]\d{1,14}$'
+          example: +1234567890
+        role:
+          type: string
+          enum: [client, provider]
+          example: client
+        timezone:
+          type: string
+          default: America/New_York
+          example: America/New_York
+
+    # ========================
+    # Notification Models
+    # ========================
+    NotificationStatus:
+      type: object
+      properties:
+        id:
+          type: string
+          example: notif_123456789
+        status:
+          type: string
+          enum: [pending, sent, failed, cancelled]
+          example: sent
+        type:
+          type: string
+          enum: [email, sms, telegram]
+          example: email
+        recipient:
+          type: string
+          example: user@example.com
+        template_name:
+          type: string
+          example: appointment_confirmation
+        attempts:
+          type: integer
+          example: 1
+        last_attempt:
+          type: string
+          format: date-time
+          example: 2024-01-15T10:00:00Z
+        sent_at:
+          type: string
+          format: date-time
+          example: 2024-01-15T10:01:00Z
+        error_message:
+          type: string
+          nullable: true
+          example: null
+
+    # ========================
+    # Telegram Models
+    # ========================
+    TelegramUpdate:
+      type: object
+      properties:
+        update_id:
+          type: integer
+          example: 123456789
+        message:
+          $ref: '#/components/schemas/TelegramMessage'
+        callback_query:
+          $ref: '#/components/schemas/TelegramCallbackQuery'
+        inline_query:
+          $ref: '#/components/schemas/TelegramInlineQuery'
+
+    TelegramMessage:
+      type: object
+      properties:
+        message_id:
+          type: integer
+          example: 12345
+        from:
+          $ref: '#/components/schemas/TelegramUser'
+        chat:
+          $ref: '#/components/schemas/TelegramChat'
+        date:
+          type: integer
+          example: 1640995200
+        text:
+          type: string
+          example: /start
+        entities:
+          type: array
+          items:
+            $ref: '#/components/schemas/TelegramMessageEntity'
+
+    TelegramUser:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 123456789
+        is_bot:
+          type: boolean
+          example: false
+        first_name:
+          type: string
+          example: John
+        last_name:
+          type: string
+          example: Doe
+        username:
+          type: string
+          example: johndoe
+        language_code:
+          type: string
+          example: en
+
+    TelegramChat:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 123456789
+        type:
+          type: string
+          enum: [private, group, supergroup, channel]
+          example: private
+        first_name:
+          type: string
+          example: John
+        last_name:
+          type: string
+          example: Doe
+        username:
+          type: string
+          example: johndoe
+
+    TelegramCallbackQuery:
+      type: object
+      properties:
+        id:
+          type: string
+          example: callback_123456789
+        from:
+          $ref: '#/components/schemas/TelegramUser'
+        message:
+          $ref: '#/components/schemas/TelegramMessage'
+        data:
+          type: string
+          example: book_service_123
+
+    TelegramInlineQuery:
+      type: object
+      properties:
+        id:
+          type: string
+          example: inline_123456789
+        from:
+          $ref: '#/components/schemas/TelegramUser'
+        query:
+          type: string
+          example: schedule appointment
+
+    TelegramMessageEntity:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [mention, hashtag, cashtag, bot_command, url, email, phone_number, bold, italic, underline, strikethrough, code, pre, text_link, text_mention]
+          example: bot_command
+        offset:
+          type: integer
+          example: 0
+        length:
+          type: integer
+          example: 6
+
+    # ========================
+    # System Monitoring Models
+    # ========================
+    HealthCheck:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+          example: healthy
+        response_time:
+          type: number
+          description: Response time in milliseconds
+          example: 45.2
+        last_check:
+          type: string
+          format: date-time
+          example: 2024-01-15T10:00:00Z
+        message:
+          type: string
+          example: Connection successful
+        details:
+          type: object
+          additionalProperties: true
+
+    SystemMetrics:
+      type: object
+      properties:
+        api_requests:
+          type: object
+          properties:
+            total:
+              type: integer
+              example: 50000
+            per_minute:
+              type: number
+              example: 34.7
+            response_time_avg:
+              type: number
+              description: Average response time in ms
+              example: 120.5
+            error_rate:
+              type: number
+              description: Error rate percentage
+              example: 0.5
+        notifications:
+          type: object
+          properties:
+            sent_today:
+              type: integer
+              example: 1250
+            success_rate:
+              type: number
+              description: Success rate percentage
+              example: 98.5
+            by_channel:
+              type: object
+              properties:
+                email:
+                  type: integer
+                  example: 800
+                sms:
+                  type: integer
+                  example: 300
+                telegram:
+                  type: integer
+                  example: 150
+        database:
+          type: object
+          properties:
+            connections_active:
+              type: integer
+              example: 5
+            connections_max:
+              type: integer
+              example: 20
+            query_time_avg:
+              type: number
+              description: Average query time in ms
+              example: 15.3
+        system:
+          type: object
+          properties:
+            memory_usage:
+              type: object
+              properties:
+                used:
+                  type: integer
+                  description: Memory used in bytes
+                  example: 134217728
+                total:
+                  type: integer
+                  description: Total memory in bytes
+                  example: 1073741824
+                percentage:
+                  type: number
+                  example: 12.5
+            cpu_usage:
+              type: number
+              description: CPU usage percentage
+              example: 45.2
+            uptime:
+              type: number
+              description: System uptime in seconds
+              example: 86400
+
+    ServiceStatus:
+      type: object
+      properties:
+        service:
+          type: string
+          example: email
+        status:
+          type: string
+          enum: [active, inactive, error, maintenance]
+          example: active
+        last_check:
+          type: string
+          format: date-time
+          example: 2024-01-15T10:00:00Z
+        configuration:
+          type: object
+          properties:
+            host:
+              type: string
+              example: smtp.gmail.com
+            port:
+              type: integer
+              example: 587
+            secure:
+              type: boolean
+              example: false
+            pool:
+              type: boolean
+              example: true
+        statistics:
+          type: object
+          properties:
+            messages_sent_today:
+              type: integer
+              example: 150
+            success_rate:
+              type: number
+              example: 99.5
+            avg_delivery_time:
+              type: number
+              description: Average delivery time in seconds
+              example: 2.3
+
+    # ========================
+    # Error Models
+    # ========================
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Authentication failed
+        code:
+          type: string
+          example: AUTH_FAILED
+        message:
+          type: string
+          example: The provided credentials are invalid
+        timestamp:
+          type: string
+          format: date-time
+          example: 2024-01-15T10:00:00Z
+
+    ValidationError:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Validation failed
+        code:
+          type: string
+          example: VALIDATION_ERROR
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                example: email
+              message:
+                type: string
+                example: Must be a valid email address
+              code:
+                type: string
+                example: INVALID_EMAIL
+
+    RateLimitError:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Rate limit exceeded
+        code:
+          type: string
+          example: RATE_LIMIT_EXCEEDED
+        message:
+          type: string
+          example: Too many requests from this IP address
+        retry_after:
+          type: integer
+          description: Seconds until requests allowed again
+          example: 300
+        limit:
+          type: integer
+          description: Request limit per window
+          example: 10
+        window:
+          type: integer
+          description: Time window in seconds
+          example: 900
+
+# ========================
+# Webhook Specifications
+# ========================
+webhooks:
+  telegram-updates:
+    post:
+      requestBody:
+        description: Telegram update received via webhook
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramUpdate'
+      responses:
+        '200':
+          description: Update processed successfully
+
+# ========================
+# External Documentation
+# ========================
+externalDocs:
+  description: Find out more about Lodge Scheduler integrations
+  url: https://docs.lodgescheduler.com/integrations
+
+# ========================
+# API Integration Examples
+# ========================
+x-examples:
+  authentication_flow:
+    description: Complete authentication flow example
+    steps:
+      - step: 1
+        action: POST /auth/login
+        request:
+          email: user@example.com
+          password: SecurePassword123!
+        response:
+          token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+      - step: 2
+        action: Use token in Authorization header
+        header: "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+  notification_workflow:
+    description: Send multi-channel notification example
+    steps:
+      - step: 1
+        action: POST /notifications/send
+        request:
+          recipient: user@example.com
+          type: email
+          template: appointment_confirmation
+          data:
+            customer_name: John Doe
+            appointment_date: "2024-01-15"
+            appointment_time: "10:00 AM"
+      - step: 2
+        action: GET /notifications/status/{notification_id}
+        response:
+          status: sent
+          sent_at: "2024-01-15T10:01:00Z"
+
+  telegram_bot_integration:
+    description: Telegram bot webhook processing example
+    steps:
+      - step: 1
+        action: Telegram sends update to webhook
+        webhook_url: https://api.lodgescheduler.com/telegram/webhook
+        update:
+          message:
+            text: /start
+            from:
+              id: 123456789
+              first_name: John
+      - step: 2
+        action: Bot processes command and responds
+        response:
+          ok: true
+
+# ========================
+# Service Configuration
+# ========================
+x-service-configuration:
+  email_service:
+    provider: nodemailer
+    configuration:
+      host: ${EMAIL_HOST}
+      port: ${EMAIL_PORT}
+      secure: false
+      auth:
+        user: ${EMAIL_USER}
+        pass: ${EMAIL_PASSWORD}
+    features:
+      - template_processing
+      - attachment_support
+      - delivery_tracking
+      - retry_mechanism
+
+  sms_service:
+    provider: twilio
+    configuration:
+      account_sid: ${TWILIO_ACCOUNT_SID}
+      auth_token: ${TWILIO_AUTH_TOKEN}
+      from_number: ${TWILIO_PHONE_NUMBER}
+    features:
+      - international_sms
+      - delivery_receipts
+      - opt_out_management
+      - queue_processing
+
+  telegram_service:
+    provider: telegram_bot_api
+    configuration:
+      bot_token: ${TELEGRAM_BOT_TOKEN}
+      webhook_url: ${WEBHOOK_URL}/telegram/webhook
+    features:
+      - inline_keyboards
+      - callback_queries
+      - file_uploads
+      - group_messaging
+      - calendar_integration
+
+  rate_limiting:
+    provider: express-rate-limit
+    storage: memory
+    configuration:
+      general_api: 100 req/15min
+      authentication: 10 req/15min
+      booking: 10 req/hour
+      webhook: 30 req/min
+    features:
+      - ip_based_limiting
+      - user_based_limiting
+      - progressive_backoff
+      - bypass_whitelist
+
+  logging_service:
+    provider: winston
+    configuration:
+      level: ${LOG_LEVEL}
+      format: json
+      transports:
+        - file: error.log
+        - file: combined.log
+        - console: development
+    features:
+      - structured_logging
+      - log_rotation
+      - error_tracking
+      - audit_trails
+
+  caching_service:
+    provider: lru-cache
+    configuration:
+      max_size: 500
+      ttl: 300000
+    features:
+      - in_memory_caching
+      - ttl_support
+      - size_management
+      - cache_statistics

@@ -1,0 +1,355 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2025-01-08",
+  "description": "Feature toggle configuration for Lodge Scheduler",
+  "features": {
+    "core": {
+      "telegram_bot": {
+        "enabled": true,
+        "description": "Main Telegram bot functionality",
+        "dependencies": [],
+        "required_env": ["TELEGRAM_BOT_TOKEN"],
+        "priority": "critical"
+      },
+      "api_server": {
+        "enabled": true,
+        "description": "REST API server for appointments",
+        "dependencies": ["core.database"],
+        "required_env": ["PORT"],
+        "priority": "high"
+      },
+      "database": {
+        "enabled": true,
+        "description": "Database connectivity and models",
+        "dependencies": [],
+        "required_env": ["DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME"],
+        "priority": "critical"
+      },
+      "authentication": {
+        "enabled": true,
+        "description": "JWT authentication system",
+        "dependencies": ["core.database"],
+        "required_env": ["JWT_SECRET"],
+        "priority": "high"
+      }
+    },
+    "scheduling": {
+      "appointments": {
+        "enabled": true,
+        "description": "Appointment booking and management",
+        "dependencies": ["core.database"],
+        "required_env": [],
+        "priority": "high"
+      },
+      "availability": {
+        "enabled": true,
+        "description": "Provider availability management",
+        "dependencies": ["core.database", "scheduling.appointments"],
+        "required_env": [],
+        "priority": "high"
+      },
+      "waitlist": {
+        "enabled": true,
+        "description": "Appointment waitlist functionality",
+        "dependencies": ["scheduling.appointments"],
+        "required_env": [],
+        "priority": "medium"
+      },
+      "recurring_appointments": {
+        "enabled": false,
+        "description": "Recurring appointment scheduling",
+        "dependencies": ["scheduling.appointments"],
+        "required_env": [],
+        "priority": "low"
+      }
+    },
+    "communications": {
+      "email_notifications": {
+        "enabled": false,
+        "description": "Email notification system",
+        "dependencies": [],
+        "required_env": ["EMAIL_HOST", "EMAIL_USER", "EMAIL_PASSWORD"],
+        "priority": "medium"
+      },
+      "sms_notifications": {
+        "enabled": false,
+        "description": "SMS notification via Twilio",
+        "dependencies": [],
+        "required_env": ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"],
+        "priority": "medium"
+      },
+      "telegram_notifications": {
+        "enabled": true,
+        "description": "Telegram-based notifications",
+        "dependencies": ["core.telegram_bot"],
+        "required_env": [],
+        "priority": "high"
+      },
+      "reminder_system": {
+        "enabled": false,
+        "description": "Advanced reminder scheduling",
+        "dependencies": [],
+        "required_env": [],
+        "priority": "low"
+      }
+    },
+    "admin": {
+      "admin_panel": {
+        "enabled": true,
+        "description": "AdminJS web administration panel",
+        "dependencies": ["core.database", "core.api_server"],
+        "required_env": [],
+        "priority": "low"
+      },
+      "admin_security": {
+        "enabled": false,
+        "description": "Enhanced admin security features",
+        "dependencies": ["admin.admin_panel"],
+        "required_env": ["ADMIN_USER_IDS"],
+        "priority": "medium"
+      },
+      "user_management": {
+        "enabled": true,
+        "description": "User management dashboard",
+        "dependencies": ["admin.admin_panel"],
+        "required_env": [],
+        "priority": "low"
+      }
+    },
+    "support": {
+      "live_chat": {
+        "enabled": false,
+        "description": "Live chat support system",
+        "dependencies": ["core.telegram_bot"],
+        "required_env": ["SUPPORT_GROUP_ID"],
+        "priority": "low"
+      },
+      "ticket_system": {
+        "enabled": false,
+        "description": "Support ticket management",
+        "dependencies": ["core.database", "support.live_chat"],
+        "required_env": [],
+        "priority": "low"
+      },
+      "private_support": {
+        "enabled": false,
+        "description": "Private support chat functionality",
+        "dependencies": ["core.telegram_bot"],
+        "required_env": [],
+        "priority": "low"
+      }
+    },
+    "broadcasting": {
+      "broadcast_system": {
+        "enabled": false,
+        "description": "Mass messaging system",
+        "dependencies": ["core.telegram_bot", "core.database"],
+        "required_env": [],
+        "priority": "low"
+      },
+      "campaign_management": {
+        "enabled": false,
+        "description": "Broadcast campaign management",
+        "dependencies": ["broadcasting.broadcast_system"],
+        "required_env": [],
+        "priority": "low"
+      },
+      "broadcast_analytics": {
+        "enabled": false,
+        "description": "Broadcast performance analytics",
+        "dependencies": ["broadcasting.broadcast_system", "analytics.basic_analytics"],
+        "required_env": [],
+        "priority": "low"
+      }
+    },
+    "analytics": {
+      "basic_analytics": {
+        "enabled": false,
+        "description": "Basic usage analytics",
+        "dependencies": ["core.database"],
+        "required_env": [],
+        "priority": "low"
+      },
+      "advanced_analytics": {
+        "enabled": false,
+        "description": "Advanced analytics and reporting",
+        "dependencies": ["analytics.basic_analytics"],
+        "required_env": [],
+        "priority": "low"
+      },
+      "dashboard": {
+        "enabled": false,
+        "description": "Analytics dashboard",
+        "dependencies": ["analytics.advanced_analytics", "admin.admin_panel"],
+        "required_env": [],
+        "priority": "low"
+      }
+    },
+    "security": {
+      "rate_limiting": {
+        "enabled": true,
+        "description": "API rate limiting",
+        "dependencies": ["core.api_server"],
+        "required_env": [],
+        "priority": "high"
+      },
+      "input_validation": {
+        "enabled": true,
+        "description": "Input sanitization and validation",
+        "dependencies": [],
+        "required_env": [],
+        "priority": "high"
+      },
+      "audit_logging": {
+        "enabled": false,
+        "description": "Security audit logging",
+        "dependencies": [],
+        "required_env": [],
+        "priority": "medium"
+      },
+      "encryption": {
+        "enabled": true,
+        "description": "Data encryption at rest",
+        "dependencies": [],
+        "required_env": [],
+        "priority": "high"
+      }
+    },
+    "data_management": {
+      "data_retention": {
+        "enabled": true,
+        "description": "Automated data cleanup",
+        "dependencies": ["core.database"],
+        "required_env": [],
+        "priority": "medium"
+      },
+      "data_export": {
+        "enabled": false,
+        "description": "Data export functionality",
+        "dependencies": ["core.database"],
+        "required_env": [],
+        "priority": "low"
+      },
+      "backup_system": {
+        "enabled": false,
+        "description": "Automated backup system",
+        "dependencies": ["core.database"],
+        "required_env": [],
+        "priority": "medium"
+      }
+    },
+    "integrations": {
+      "calendar_sync": {
+        "enabled": false,
+        "description": "External calendar synchronization",
+        "dependencies": ["scheduling.appointments"],
+        "required_env": [],
+        "priority": "low"
+      },
+      "payment_processing": {
+        "enabled": false,
+        "description": "Payment gateway integration",
+        "dependencies": ["scheduling.appointments"],
+        "required_env": [],
+        "priority": "low"
+      },
+      "webhook_system": {
+        "enabled": false,
+        "description": "Webhook notifications",
+        "dependencies": ["core.api_server"],
+        "required_env": [],
+        "priority": "low"
+      }
+    }
+  },
+  "presets": {
+    "minimal": {
+      "description": "Telegram bot only - no web features",
+      "features": [
+        "core.telegram_bot",
+        "core.database",
+        "scheduling.appointments",
+        "scheduling.availability",
+        "communications.telegram_notifications",
+        "security.input_validation",
+        "security.encryption",
+        "data_management.data_retention"
+      ]
+    },
+    "basic": {
+      "description": "Bot + basic API server",
+      "features": [
+        "core.telegram_bot",
+        "core.api_server",
+        "core.database",
+        "core.authentication",
+        "scheduling.appointments",
+        "scheduling.availability",
+        "scheduling.waitlist",
+        "communications.telegram_notifications",
+        "security.rate_limiting",
+        "security.input_validation",
+        "security.encryption",
+        "data_management.data_retention"
+      ]
+    },
+    "standard": {
+      "description": "Full scheduling system with notifications",
+      "extends": "basic",
+      "additional_features": [
+        "communications.email_notifications",
+        "communications.sms_notifications",
+        "communications.reminder_system",
+        "security.audit_logging"
+      ]
+    },
+    "enterprise": {
+      "description": "Full featured system with admin panel",
+      "extends": "standard",
+      "additional_features": [
+        "admin.admin_panel",
+        "admin.admin_security",
+        "admin.user_management",
+        "support.live_chat",
+        "support.ticket_system",
+        "broadcasting.broadcast_system",
+        "analytics.basic_analytics",
+        "analytics.advanced_analytics",
+        "analytics.dashboard",
+        "data_management.data_export",
+        "data_management.backup_system"
+      ]
+    },
+    "development": {
+      "description": "Development environment with all features",
+      "features": "*"
+    }
+  },
+  "environment_overrides": {
+    "production": {
+      "force_enabled": [
+        "security.rate_limiting",
+        "security.input_validation",
+        "security.encryption",
+        "security.audit_logging"
+      ],
+      "force_disabled": []
+    },
+    "development": {
+      "force_enabled": [],
+      "force_disabled": []
+    },
+    "testing": {
+      "force_enabled": [
+        "core.telegram_bot",
+        "core.database",
+        "scheduling.appointments"
+      ],
+      "force_disabled": [
+        "communications.email_notifications",
+        "communications.sms_notifications",
+        "broadcasting.broadcast_system"
+      ]
+    }
+  }
+}

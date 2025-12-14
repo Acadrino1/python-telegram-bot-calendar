@@ -1,95 +1,86 @@
+const { Model, transaction } = require('objection');
 const moment = require('moment-timezone');
 const { v4: uuidv4 } = require('uuid');
-const User = require('../models/User');
+const logger = require('../utils/logger');
+
 const Appointment = require('../models/Appointment');
+const User = require('../models/User');
 const Service = require('../models/Service');
 const WaitlistEntry = require('../models/WaitlistEntry');
-const AppointmentHistory = require('../models/AppointmentHistory');
-const AvailabilityService = require('./AvailabilityService');
 const NotificationService = require('./NotificationService');
-const { AppointmentStatus, WaitlistStatus } = require('../types');
+const AppointmentHistory = require('../models/AppointmentHistory');
 
 class BookingService {
   constructor() {
-    this.defaultTimeZone = process.env.DEFAULT_TIMEZONE || 'America/New_York';
+    this.notificationService = new NotificationService();
   }
 
   /**
-   * Book a new appointment
-   * @param {Object} bookingData - Appointment booking data
-   * @returns {Object} Booking result
+   * Book a new appointment with proper transaction handling
    */
   async bookAppointment(bookingData) {
-    const {
-      client_id,
-      provider_id,
-      service_id,
-      appointment_datetime,
-      notes,
-      timezone = this.defaultTimeZone
-    } = bookingData;
-
+    const trx = await transaction.start(Model.knex());
+    
     try {
-      // Validate required data
+      const {
+        client_id,
+        provider_id,
+        service_id,
+        appointment_datetime,
+        notes,
+        timezone = 'America/New_York'
+      } = bookingData;
+
+      // Validate required fields
       if (!client_id || !provider_id || !service_id || !appointment_datetime) {
-        throw new Error('Missing required booking information');
+        throw new Error('Missing required booking fields');
       }
 
-      // Get client, provider, and service
-      const [client, provider, service] = await Promise.all([
-        User.query().findById(client_id),
-        User.query().findById(provider_id),
-        Service.query().findById(service_id)
-      ]);
-
-      if (!client) throw new Error('Client not found');
-      if (!provider) throw new Error('Provider not found');
-      if (!service) throw new Error('Service not found');
-      if (!client.isClient()) throw new Error('User is not a client');
-      if (!provider.isProvider()) throw new Error('User is not a provider');
-      if (service.provider_id !== provider_id) throw new Error('Service does not belong to provider');
-
-      // Validate appointment time
+      // Validate business hours
+      const BookingSlotService = require('./BookingSlotService');
+      const slotService = new BookingSlotService();
       const appointmentMoment = moment.tz(appointment_datetime, timezone);
-      if (!appointmentMoment.isValid()) {
-        throw new Error('Invalid appointment date/time');
+      const date = appointmentMoment.format('YYYY-MM-DD');
+      const time = appointmentMoment.format('HH:mm');
+
+      const validation = slotService.isValidBusinessHourSlot(date, time);
+      if (!validation.valid) {
+        logger.warn('Booking rejected - outside business hours', { date, time, reason: validation.reason });
+        throw new Error(`Booking rejected: ${validation.reason}`);
       }
 
       // Check if slot is available
-      const availability = await AvailabilityService.isSlotAvailable(
-        provider_id,
-        appointment_datetime,
-        service.duration_minutes
-      );
+      const existingAppointment = await Appointment.query(trx)
+        .where('appointment_datetime', appointment_datetime)
+        .where('provider_id', provider_id)
+        .whereIn('status', ['scheduled', 'confirmed', 'in_progress'])
+        .first();
 
-      if (!availability.available) {
-        // Try to add to waitlist if service allows it
-        if (service.allowsWaitlist()) {
-          const waitlistEntry = await this.addToWaitlist({
-            client_id,
-            provider_id,
-            service_id,
-            preferred_date: appointmentMoment.format('YYYY-MM-DD'),
-            preferred_start_time: appointmentMoment.format('HH:mm:ss'),
-            preferred_end_time: appointmentMoment.clone().add(service.duration_minutes, 'minutes').format('HH:mm:ss'),
-            notes
-          });
+      if (existingAppointment) {
+        await trx.rollback();
+        
+        // Try to add to waitlist
+        const waitlistResult = await this.addToWaitlist({
+          client_id,
+          service_id,
+          preferred_datetime: appointment_datetime,
+          notes
+        });
 
-          return {
-            success: false,
-            reason: 'slot_unavailable',
-            message: availability.reason,
-            waitlist_added: true,
-            waitlist_entry: waitlistEntry
-          };
-        } else {
-          return {
-            success: false,
-            reason: 'slot_unavailable',
-            message: availability.reason,
-            waitlist_added: false
-          };
-        }
+        return {
+          success: false,
+          reason: 'slot_unavailable',
+          message: 'The selected time slot is no longer available',
+          waitlist_added: waitlistResult.success,
+          waitlist_entry: waitlistResult.entry
+        };
+      }
+
+      // Get service details for duration
+      const service = await Service.query(trx).findById(service_id);
+      if (!service) {
+        await trx.rollback();
+        throw new Error('Service not found');
       }
 
       // Create appointment
@@ -98,565 +89,491 @@ class BookingService {
         client_id,
         provider_id,
         service_id,
-        appointment_datetime: appointmentMoment.format('YYYY-MM-DD HH:mm:ss'),
-        duration_minutes: service.duration_minutes,
-        status: service.requiresConfirmation() ? AppointmentStatus.SCHEDULED : AppointmentStatus.CONFIRMED,
+        appointment_datetime: moment.tz(appointment_datetime, timezone).utc().format(),
+        duration_minutes: service.duration_minutes || 60,
+        status: 'scheduled',
         notes: notes || null,
-        price: service.price
+        price: service.price || 0,
+        created_at: new Date(),
+        updated_at: new Date()
       };
 
-      const appointment = await Appointment.query().insert(appointmentData);
+      const appointment = await Appointment.query(trx).insert(appointmentData);
 
-      // Create appointment history entry
-      await AppointmentHistory.query().insert({
+      // Create appointment history
+      await AppointmentHistory.query(trx).insert({
         appointment_id: appointment.id,
         action: 'created',
-        changes: JSON.stringify({
-          status: appointment.status,
-          appointment_datetime: appointment.appointment_datetime
-        }),
+        changes: {
+          datetime: appointment_datetime,
+          service: service.name,
+          status: 'scheduled'
+        },
         changed_by: client_id,
-        notes: 'Appointment booked'
+        notes: `Appointment created via booking service`
       });
+
+      await trx.commit();
 
       // Load full appointment with relations
       const fullAppointment = await Appointment.query()
         .findById(appointment.id)
         .withGraphFetched('[client, provider, service]');
 
-      // Send confirmation notification
-      try {
-        await NotificationService.sendAppointmentConfirmation(fullAppointment);
-      } catch (notificationError) {
-        console.error('Failed to send booking confirmation:', notificationError);
-        // Don't fail the booking if notification fails
-      }
+      // Send notifications (async, don't block response)
+      this.sendBookingNotifications(fullAppointment).catch(error => {
+        logger.error('Failed to send booking notifications:', error);
+      });
 
-      // Schedule reminder notifications
-      try {
-        await this.scheduleReminders(fullAppointment);
-      } catch (reminderError) {
-        console.error('Failed to schedule reminders:', reminderError);
-      }
+      logger.info('Appointment booked successfully', {
+        appointmentId: appointment.id,
+        clientId: client_id,
+        providerId: provider_id,
+        datetime: appointment_datetime
+      });
 
       return {
         success: true,
-        appointment: fullAppointment,
-        message: 'Appointment booked successfully'
+        message: 'Appointment booked successfully',
+        appointment: fullAppointment
       };
 
     } catch (error) {
-      console.error('Error booking appointment:', error);
+      await trx.rollback();
+      logger.error('Error booking appointment:', error);
       throw error;
     }
   }
 
   /**
-   * Cancel an appointment
-   * @param {string} appointmentUuid - Appointment UUID
-   * @param {number} cancelledBy - User ID who cancelled
-   * @param {string} reason - Cancellation reason
-   * @returns {Object} Cancellation result
+   * Cancel an appointment with proper transaction handling
    */
-  async cancelAppointment(appointmentUuid, cancelledBy, reason = null) {
+  async cancelAppointment(appointmentUuid, cancelledBy, reason) {
+    const trx = await transaction.start(Model.knex());
+
     try {
-      const appointment = await Appointment.query()
-        .findOne({ uuid: appointmentUuid })
+      const appointment = await Appointment.query(trx)
+        .findOne('uuid', appointmentUuid)
         .withGraphFetched('[client, provider, service]');
 
       if (!appointment) {
+        await trx.rollback();
         throw new Error('Appointment not found');
       }
 
-      if (!appointment.isActive()) {
-        throw new Error('Cannot cancel this appointment');
+      if (appointment.status === 'cancelled') {
+        await trx.rollback();
+        return {
+          success: false,
+          message: 'Appointment is already cancelled'
+        };
       }
 
-      // Check cancellation policy
-      const service = appointment.service;
-      const cancellationHours = service.getCancellationHours();
-      
-      if (!appointment.canBeCancelled(cancellationHours)) {
-        throw new Error(`Cannot cancel appointment less than ${cancellationHours} hours in advance`);
-      }
+      // Update appointment status
+      const updatedAppointment = await appointment
+        .$query(trx)
+        .patchAndFetch({
+          status: 'cancelled',
+          cancelled_at: new Date(),
+          cancelled_by: cancelledBy,
+          cancellation_reason: reason || 'No reason provided',
+          updated_at: new Date()
+        });
 
-      // Cancel the appointment
-      await appointment.cancel(cancelledBy, reason);
-
-      // Create history entry
-      await AppointmentHistory.query().insert({
+      // Create history record
+      await AppointmentHistory.query(trx).insert({
         appointment_id: appointment.id,
         action: 'cancelled',
-        changes: JSON.stringify({
-          old_status: AppointmentStatus.SCHEDULED,
-          new_status: AppointmentStatus.CANCELLED,
-          cancelled_by: cancelledBy,
-          cancellation_reason: reason
-        }),
+        changes: {
+          previous_status: appointment.status,
+          new_status: 'cancelled',
+          reason: reason || 'No reason provided'
+        },
         changed_by: cancelledBy,
         notes: `Appointment cancelled: ${reason || 'No reason provided'}`
       });
 
-      // Send cancellation notification
-      try {
-        await NotificationService.sendAppointmentCancellation(appointment, reason);
-      } catch (notificationError) {
-        console.error('Failed to send cancellation notification:', notificationError);
-      }
+      await trx.commit();
 
-      // Process waitlist
-      try {
-        await this.processWaitlistForCancellation(appointment);
-      } catch (waitlistError) {
-        console.error('Failed to process waitlist:', waitlistError);
-      }
+      // Process waitlist (async)
+      this.processWaitlistForSlot(appointment.appointment_datetime, appointment.service_id)
+        .catch(error => logger.error('Error processing waitlist:', error));
 
-      // Cancel any pending reminders
-      try {
-        await NotificationService.cancelAppointmentNotifications(appointment.id);
-      } catch (reminderError) {
-        console.error('Failed to cancel reminder notifications:', reminderError);
-      }
+      // Send notifications (async)
+      this.sendCancellationNotifications(updatedAppointment, reason)
+        .catch(error => logger.error('Failed to send cancellation notifications:', error));
+
+      logger.info('Appointment cancelled successfully', {
+        appointmentId: appointment.id,
+        cancelledBy,
+        reason
+      });
 
       return {
         success: true,
-        appointment,
-        message: 'Appointment cancelled successfully'
+        message: 'Appointment cancelled successfully',
+        appointment: updatedAppointment
       };
 
     } catch (error) {
-      console.error('Error cancelling appointment:', error);
+      await trx.rollback();
+      logger.error('Error cancelling appointment:', error);
       throw error;
     }
   }
 
   /**
-   * Reschedule an appointment
-   * @param {string} appointmentUuid - Appointment UUID
-   * @param {string} newDateTime - New appointment date/time
-   * @param {number} rescheduledBy - User ID who rescheduled
-   * @param {string} timezone - Timezone
-   * @returns {Object} Reschedule result
+   * Reschedule an appointment with proper transaction handling
    */
-  async rescheduleAppointment(appointmentUuid, newDateTime, rescheduledBy, timezone = this.defaultTimeZone) {
+  async rescheduleAppointment(appointmentUuid, newDateTime, rescheduledBy, timezone = 'America/New_York') {
+    const trx = await transaction.start(Model.knex());
+
     try {
-      const appointment = await Appointment.query()
-        .findOne({ uuid: appointmentUuid })
+      const appointment = await Appointment.query(trx)
+        .findOne('uuid', appointmentUuid)
         .withGraphFetched('[client, provider, service]');
 
       if (!appointment) {
+        await trx.rollback();
         throw new Error('Appointment not found');
       }
 
-      if (!appointment.isActive()) {
-        throw new Error('Cannot reschedule this appointment');
-      }
-
-      // Check rescheduling policy
-      const service = appointment.service;
-      const rescheduleHours = service.getCancellationHours(); // Use same policy as cancellation
-      
-      if (!appointment.canBeRescheduled(rescheduleHours)) {
-        throw new Error(`Cannot reschedule appointment less than ${rescheduleHours} hours in advance`);
-      }
-
-      // Validate new appointment time
-      const newAppointmentMoment = moment.tz(newDateTime, timezone);
-      if (!newAppointmentMoment.isValid()) {
-        throw new Error('Invalid new appointment date/time');
-      }
+      const oldDateTime = appointment.appointment_datetime;
+      const newDateTimeUTC = moment.tz(newDateTime, timezone).utc().format();
 
       // Check if new slot is available
-      const availability = await AvailabilityService.isSlotAvailable(
-        appointment.provider_id,
-        newDateTime,
-        service.duration_minutes,
-        appointment.id // Exclude current appointment
-      );
+      const conflictingAppointment = await Appointment.query(trx)
+        .where('appointment_datetime', newDateTimeUTC)
+        .where('provider_id', appointment.provider_id)
+        .whereIn('status', ['scheduled', 'confirmed', 'in_progress'])
+        .whereNot('id', appointment.id)
+        .first();
 
-      if (!availability.available) {
+      if (conflictingAppointment) {
+        await trx.rollback();
         return {
           success: false,
-          reason: 'new_slot_unavailable',
-          message: availability.reason
+          reason: 'slot_unavailable',
+          message: 'The new time slot is not available'
         };
       }
 
-      // Store old values for history
-      const oldDateTime = appointment.appointment_datetime;
-
       // Update appointment
-      await appointment.$query().patch({
-        appointment_datetime: newAppointmentMoment.format('YYYY-MM-DD HH:mm:ss'),
-        status: service.requiresConfirmation() ? AppointmentStatus.SCHEDULED : AppointmentStatus.CONFIRMED
-      });
+      const updatedAppointment = await appointment
+        .$query(trx)
+        .patchAndFetch({
+          appointment_datetime: newDateTimeUTC,
+          updated_at: new Date()
+        });
 
-      // Update the appointment object
-      appointment.appointment_datetime = newAppointmentMoment.format('YYYY-MM-DD HH:mm:ss');
-
-      // Create history entry
-      await AppointmentHistory.query().insert({
+      // Create history record
+      await AppointmentHistory.query(trx).insert({
         appointment_id: appointment.id,
         action: 'rescheduled',
-        changes: JSON.stringify({
-          old_appointment_datetime: oldDateTime,
-          new_appointment_datetime: appointment.appointment_datetime,
-          rescheduled_by: rescheduledBy
-        }),
+        changes: {
+          old_datetime: oldDateTime,
+          new_datetime: newDateTimeUTC,
+          status: appointment.status
+        },
         changed_by: rescheduledBy,
-        notes: 'Appointment rescheduled'
+        notes: `Appointment rescheduled from ${oldDateTime} to ${newDateTimeUTC}`
       });
 
-      // Send reschedule notification
-      try {
-        await NotificationService.sendAppointmentReschedule(appointment, oldDateTime);
-      } catch (notificationError) {
-        console.error('Failed to send reschedule notification:', notificationError);
-      }
+      await trx.commit();
 
-      // Cancel old reminders and schedule new ones
-      try {
-        await NotificationService.cancelAppointmentNotifications(appointment.id);
-        await this.scheduleReminders(appointment);
-      } catch (reminderError) {
-        console.error('Failed to update reminder notifications:', reminderError);
-      }
+      // Process waitlist for old slot (async)
+      this.processWaitlistForSlot(oldDateTime, appointment.service_id)
+        .catch(error => logger.error('Error processing waitlist:', error));
+
+      // Send notifications (async)
+      this.sendRescheduleNotifications(updatedAppointment, oldDateTime)
+        .catch(error => logger.error('Failed to send reschedule notifications:', error));
+
+      logger.info('Appointment rescheduled successfully', {
+        appointmentId: appointment.id,
+        oldDateTime,
+        newDateTime: newDateTimeUTC,
+        rescheduledBy
+      });
 
       return {
         success: true,
-        appointment,
-        old_datetime: oldDateTime,
-        message: 'Appointment rescheduled successfully'
+        message: 'Appointment rescheduled successfully',
+        appointment: updatedAppointment,
+        old_datetime: oldDateTime
       };
 
     } catch (error) {
-      console.error('Error rescheduling appointment:', error);
+      await trx.rollback();
+      logger.error('Error rescheduling appointment:', error);
       throw error;
     }
   }
 
   /**
    * Confirm an appointment
-   * @param {string} appointmentUuid - Appointment UUID
-   * @param {number} confirmedBy - User ID who confirmed
-   * @returns {Object} Confirmation result
    */
   async confirmAppointment(appointmentUuid, confirmedBy) {
+    const trx = await transaction.start(Model.knex());
+
     try {
-      const appointment = await Appointment.query()
-        .findOne({ uuid: appointmentUuid })
+      const appointment = await Appointment.query(trx)
+        .findOne('uuid', appointmentUuid)
         .withGraphFetched('[client, provider, service]');
 
       if (!appointment) {
+        await trx.rollback();
         throw new Error('Appointment not found');
       }
 
-      if (!appointment.isScheduled()) {
-        throw new Error('Appointment is not in scheduled status');
+      if (appointment.status !== 'scheduled') {
+        await trx.rollback();
+        return {
+          success: false,
+          message: `Cannot confirm appointment with status: ${appointment.status}`
+        };
       }
 
-      await appointment.confirm();
+      const updatedAppointment = await appointment
+        .$query(trx)
+        .patchAndFetch({
+          status: 'confirmed',
+          confirmed_at: new Date(),
+          updated_at: new Date()
+        });
 
-      // Create history entry
-      await AppointmentHistory.query().insert({
+      // Create history record
+      await AppointmentHistory.query(trx).insert({
         appointment_id: appointment.id,
         action: 'confirmed',
-        changes: JSON.stringify({
-          old_status: AppointmentStatus.SCHEDULED,
-          new_status: AppointmentStatus.CONFIRMED,
-          confirmed_by: confirmedBy
-        }),
+        changes: {
+          previous_status: 'scheduled',
+          new_status: 'confirmed'
+        },
         changed_by: confirmedBy,
-        notes: 'Appointment confirmed'
+        notes: `Appointment confirmed`
+      });
+
+      await trx.commit();
+
+      logger.info('Appointment confirmed successfully', {
+        appointmentId: appointment.id,
+        confirmedBy
       });
 
       return {
         success: true,
-        appointment,
-        message: 'Appointment confirmed successfully'
+        message: 'Appointment confirmed successfully',
+        appointment: updatedAppointment
       };
 
     } catch (error) {
-      console.error('Error confirming appointment:', error);
+      await trx.rollback();
+      logger.error('Error confirming appointment:', error);
       throw error;
     }
   }
 
   /**
    * Complete an appointment
-   * @param {string} appointmentUuid - Appointment UUID
-   * @param {number} completedBy - User ID who marked as complete
-   * @param {string} providerNotes - Provider's notes
-   * @returns {Object} Completion result
    */
-  async completeAppointment(appointmentUuid, completedBy, providerNotes = null) {
+  async completeAppointment(appointmentUuid, completedBy, providerNotes) {
+    const trx = await transaction.start(Model.knex());
+
     try {
-      const appointment = await Appointment.query()
-        .findOne({ uuid: appointmentUuid })
+      const appointment = await Appointment.query(trx)
+        .findOne('uuid', appointmentUuid)
         .withGraphFetched('[client, provider, service]');
 
       if (!appointment) {
+        await trx.rollback();
         throw new Error('Appointment not found');
       }
 
-      if (!appointment.isActive()) {
-        throw new Error('Cannot complete this appointment');
+      if (!['confirmed', 'in_progress'].includes(appointment.status)) {
+        await trx.rollback();
+        return {
+          success: false,
+          message: `Cannot complete appointment with status: ${appointment.status}`
+        };
       }
 
-      const oldStatus = appointment.status;
-      await appointment.complete(providerNotes);
+      const updatedAppointment = await appointment
+        .$query(trx)
+        .patchAndFetch({
+          status: 'completed',
+          completed_at: new Date(),
+          provider_notes: providerNotes || appointment.provider_notes,
+          updated_at: new Date()
+        });
 
-      // Create history entry
-      await AppointmentHistory.query().insert({
+      // Create history record
+      await AppointmentHistory.query(trx).insert({
         appointment_id: appointment.id,
         action: 'completed',
-        changes: JSON.stringify({
-          old_status: oldStatus,
-          new_status: AppointmentStatus.COMPLETED,
-          completed_by: completedBy,
-          provider_notes: providerNotes
-        }),
+        changes: {
+          previous_status: appointment.status,
+          new_status: 'completed',
+          provider_notes: providerNotes ? 'added' : 'none'
+        },
         changed_by: completedBy,
-        notes: 'Appointment completed'
+        notes: `Appointment completed${providerNotes ? ' with notes' : ''}`
+      });
+
+      await trx.commit();
+
+      logger.info('Appointment completed successfully', {
+        appointmentId: appointment.id,
+        completedBy
       });
 
       return {
         success: true,
-        appointment,
-        message: 'Appointment completed successfully'
+        message: 'Appointment completed successfully',
+        appointment: updatedAppointment
       };
 
     } catch (error) {
-      console.error('Error completing appointment:', error);
+      await trx.rollback();
+      logger.error('Error completing appointment:', error);
       throw error;
     }
   }
 
   /**
-   * Add client to waitlist
-   * @param {Object} waitlistData - Waitlist entry data
-   * @returns {Object} Waitlist entry
+   * Add client to waitlist with transaction handling
    */
   async addToWaitlist(waitlistData) {
-    const {
-      client_id,
-      provider_id,
-      service_id,
-      preferred_date,
-      preferred_start_time,
-      preferred_end_time,
-      notes
-    } = waitlistData;
+    const trx = await transaction.start(Model.knex());
 
     try {
-      // Check if client is already on waitlist for this date/service
-      const existingEntry = await WaitlistEntry.query()
+      const {
+        client_id,
+        service_id,
+        preferred_datetime,
+        notes
+      } = waitlistData;
+
+      // Check if already on waitlist for this slot
+      const existing = await WaitlistEntry.query(trx)
         .where('client_id', client_id)
-        .where('provider_id', provider_id)
         .where('service_id', service_id)
-        .where('preferred_date', preferred_date)
-        .where('status', WaitlistStatus.ACTIVE)
+        .where('preferred_datetime', preferred_datetime)
+        .where('status', 'waiting')
         .first();
 
-      if (existingEntry) {
-        throw new Error('Client is already on waitlist for this service on this date');
+      if (existing) {
+        await trx.rollback();
+        return {
+          success: false,
+          message: 'Already on waitlist for this time slot'
+        };
       }
 
-      // Create waitlist entry (expires in 7 days by default)
-      const expiresAt = moment().add(7, 'days').format('YYYY-MM-DD HH:mm:ss');
-
-      const waitlistEntry = await WaitlistEntry.query().insert({
+      const entry = await WaitlistEntry.query(trx).insert({
         client_id,
-        provider_id,
         service_id,
-        preferred_date,
-        preferred_start_time,
-        preferred_end_time,
-        status: WaitlistStatus.ACTIVE,
+        preferred_datetime,
         notes,
-        expires_at: expiresAt
+        status: 'waiting',
+        created_at: new Date(),
+        updated_at: new Date()
       });
 
-      return waitlistEntry;
+      await trx.commit();
 
-    } catch (error) {
-      console.error('Error adding to waitlist:', error);
-      throw error;
-    }
-  }
+      logger.info('Client added to waitlist', {
+        entryId: entry.id,
+        clientId: client_id,
+        serviceId: service_id,
+        datetime: preferred_datetime
+      });
 
-  /**
-   * Process waitlist when an appointment is cancelled
-   * @param {Object} cancelledAppointment - Cancelled appointment
-   */
-  async processWaitlistForCancellation(cancelledAppointment) {
-    try {
-      const appointmentDate = moment(cancelledAppointment.appointment_datetime).format('YYYY-MM-DD');
-
-      // Find active waitlist entries for this provider, service, and date
-      const waitlistEntries = await WaitlistEntry.query()
-        .where('provider_id', cancelledAppointment.provider_id)
-        .where('service_id', cancelledAppointment.service_id)
-        .where('preferred_date', appointmentDate)
-        .where('status', WaitlistStatus.ACTIVE)
-        .withGraphFetched('[client, service]')
-        .orderBy('created_at'); // First come, first served
-
-      if (waitlistEntries.length === 0) {
-        return;
-      }
-
-      // Check if the cancelled slot matches any waitlist preferences
-      const cancelledStartTime = moment(cancelledAppointment.appointment_datetime).format('HH:mm:ss');
-      const cancelledEndTime = moment(cancelledAppointment.appointment_datetime)
-        .add(cancelledAppointment.duration_minutes, 'minutes')
-        .format('HH:mm:ss');
-
-      for (const entry of waitlistEntries) {
-        // Check if this waitlist entry matches the available time
-        if (this.waitlistEntryMatches(entry, cancelledStartTime, cancelledEndTime)) {
-          // Notify client about availability
-          try {
-            await NotificationService.sendWaitlistNotification(entry, {
-              available_datetime: cancelledAppointment.appointment_datetime,
-              duration_minutes: cancelledAppointment.duration_minutes
-            });
-
-            // Update waitlist entry status
-            await entry.$query().patch({
-              status: WaitlistStatus.NOTIFIED,
-              notified_at: moment().format('YYYY-MM-DD HH:mm:ss')
-            });
-
-            // Only notify the first matching entry
-            break;
-
-          } catch (notificationError) {
-            console.error('Failed to send waitlist notification:', notificationError);
-          }
-        }
-      }
-
-    } catch (error) {
-      console.error('Error processing waitlist:', error);
-    }
-  }
-
-  /**
-   * Check if waitlist entry matches available time slot
-   */
-  waitlistEntryMatches(waitlistEntry, availableStartTime, availableEndTime) {
-    // If no time preference specified, any time is okay
-    if (!waitlistEntry.preferred_start_time && !waitlistEntry.preferred_end_time) {
-      return true;
-    }
-
-    // If only start time specified
-    if (waitlistEntry.preferred_start_time && !waitlistEntry.preferred_end_time) {
-      return availableStartTime >= waitlistEntry.preferred_start_time;
-    }
-
-    // If only end time specified
-    if (!waitlistEntry.preferred_start_time && waitlistEntry.preferred_end_time) {
-      return availableEndTime <= waitlistEntry.preferred_end_time;
-    }
-
-    // If both times specified
-    return availableStartTime >= waitlistEntry.preferred_start_time && 
-           availableEndTime <= waitlistEntry.preferred_end_time;
-  }
-
-  /**
-   * Schedule reminder notifications for an appointment
-   * @param {Object} appointment - Appointment object
-   */
-  async scheduleReminders(appointment) {
-    const reminderHours = [24, 2]; // 24 hours and 2 hours before
-
-    for (const hours of reminderHours) {
-      const appointmentTime = moment(appointment.appointment_datetime);
-      const reminderTime = appointmentTime.clone().subtract(hours, 'hours');
-
-      // Only schedule if reminder time is in the future
-      if (reminderTime.isAfter(moment())) {
-        await NotificationService.scheduleReminder(appointment, hours, reminderTime.toDate());
-      }
-    }
-  }
-
-  /**
-   * Get booking statistics for a provider
-   * @param {number} providerId - Provider ID
-   * @param {string} startDate - Start date
-   * @param {string} endDate - End date
-   * @returns {Object} Booking statistics
-   */
-  async getBookingStatistics(providerId, startDate, endDate) {
-    try {
-      const appointments = await Appointment.query()
-        .where('provider_id', providerId)
-        .where('appointment_datetime', '>=', startDate)
-        .where('appointment_datetime', '<=', endDate)
-        .withGraphFetched('[client, service]');
-
-      const stats = {
-        total_appointments: appointments.length,
-        by_status: {
-          scheduled: appointments.filter(a => a.status === AppointmentStatus.SCHEDULED).length,
-          confirmed: appointments.filter(a => a.status === AppointmentStatus.CONFIRMED).length,
-          completed: appointments.filter(a => a.status === AppointmentStatus.COMPLETED).length,
-          cancelled: appointments.filter(a => a.status === AppointmentStatus.CANCELLED).length,
-          no_show: appointments.filter(a => a.status === AppointmentStatus.NO_SHOW).length
-        },
-        total_revenue: 0,
-        by_service: {},
-        cancellation_rate: 0,
-        no_show_rate: 0,
-        completion_rate: 0
+      return {
+        success: true,
+        message: 'Added to waitlist successfully',
+        entry
       };
 
-      // Calculate revenue and service breakdown
-      appointments.forEach(appointment => {
-        if (appointment.price) {
-          stats.total_revenue += parseFloat(appointment.price);
-        }
-
-        const serviceName = appointment.service.name;
-        if (!stats.by_service[serviceName]) {
-          stats.by_service[serviceName] = {
-            count: 0,
-            revenue: 0,
-            completed: 0,
-            cancelled: 0
-          };
-        }
-
-        stats.by_service[serviceName].count++;
-        if (appointment.price) {
-          stats.by_service[serviceName].revenue += parseFloat(appointment.price);
-        }
-        if (appointment.status === AppointmentStatus.COMPLETED) {
-          stats.by_service[serviceName].completed++;
-        }
-        if (appointment.status === AppointmentStatus.CANCELLED) {
-          stats.by_service[serviceName].cancelled++;
-        }
-      });
-
-      // Calculate rates
-      if (stats.total_appointments > 0) {
-        stats.cancellation_rate = Math.round((stats.by_status.cancelled / stats.total_appointments) * 100);
-        stats.no_show_rate = Math.round((stats.by_status.no_show / stats.total_appointments) * 100);
-        stats.completion_rate = Math.round((stats.by_status.completed / stats.total_appointments) * 100);
-      }
-
-      return stats;
-
     } catch (error) {
-      console.error('Error getting booking statistics:', error);
+      await trx.rollback();
+      logger.error('Error adding to waitlist:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Process waitlist for a newly available slot
+   */
+  async processWaitlistForSlot(dateTime, serviceId) {
+    try {
+      const waitlistEntries = await WaitlistEntry.query()
+        .where('service_id', serviceId)
+        .where('preferred_datetime', dateTime)
+        .where('status', 'waiting')
+        .withGraphFetched('[client, service]')
+        .orderBy('created_at', 'asc');
+
+      for (const entry of waitlistEntries) {
+        try {
+          // Send notification about available slot
+          await this.notificationService.sendWaitlistNotification(entry, {
+            available_datetime: dateTime,
+            duration_minutes: entry.service?.duration_minutes || 60
+          });
+
+          logger.info('Waitlist notification sent', {
+            entryId: entry.id,
+            clientId: entry.client_id,
+            datetime: dateTime
+          });
+        } catch (notificationError) {
+          logger.error('Failed to send waitlist notification:', notificationError);
+        }
+      }
+    } catch (error) {
+      logger.error('Error processing waitlist:', error);
+    }
+  }
+
+  /**
+   * Send booking notifications
+   */
+  async sendBookingNotifications(appointment) {
+    try {
+      await this.notificationService.sendAppointmentConfirmation(appointment);
+      logger.info('Booking notifications sent', { appointmentId: appointment.id });
+    } catch (error) {
+      logger.error('Failed to send booking notifications:', error);
+      // Don't throw - notifications are non-critical
+    }
+  }
+
+  /**
+   * Send cancellation notifications
+   */
+  async sendCancellationNotifications(appointment, reason) {
+    try {
+      await this.notificationService.sendAppointmentCancellation(appointment, reason);
+      logger.info('Cancellation notifications sent', { appointmentId: appointment.id });
+    } catch (error) {
+      logger.error('Failed to send cancellation notifications:', error);
+      // Don't throw - notifications are non-critical
+    }
+  }
+
+  /**
+   * Send reschedule notifications
+   */
+  async sendRescheduleNotifications(appointment, oldDateTime) {
+    try {
+      await this.notificationService.sendAppointmentReschedule(appointment, oldDateTime);
+      logger.info('Reschedule notifications sent', { appointmentId: appointment.id });
+    } catch (error) {
+      logger.error('Failed to send reschedule notifications:', error);
+      // Don't throw - notifications are non-critical
     }
   }
 }
 
-module.exports = new BookingService();
+module.exports = BookingService;

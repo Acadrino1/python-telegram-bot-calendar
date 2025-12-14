@@ -2,10 +2,6 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const logger = require('../utils/logger');
 
-/**
- * Authentication middleware
- * Verifies JWT token and attaches user to request
- */
 const authMiddleware = async (req, res, next) => {
   try {
     const authHeader = req.header('Authorization');
@@ -79,10 +75,6 @@ const authMiddleware = async (req, res, next) => {
   }
 };
 
-/**
- * Role-based authorization middleware
- * @param {string|array} roles - Required role(s)
- */
 const authorize = (roles) => {
   return (req, res, next) => {
     if (!req.user) {
@@ -107,29 +99,14 @@ const authorize = (roles) => {
   };
 };
 
-/**
- * Provider-only middleware
- */
 const providerOnly = authorize('provider');
 
-/**
- * Client-only middleware
- */
 const clientOnly = authorize('client');
 
-/**
- * Admin-only middleware
- */
 const adminOnly = authorize('admin');
 
-/**
- * Provider or admin middleware
- */
 const providerOrAdmin = authorize(['provider', 'admin']);
 
-/**
- * Optional auth middleware - doesn't fail if no token provided
- */
 const optionalAuth = async (req, res, next) => {
   try {
     const authHeader = req.header('Authorization');
@@ -158,10 +135,6 @@ const optionalAuth = async (req, res, next) => {
   }
 };
 
-/**
- * Resource ownership middleware
- * Checks if user owns the resource or is admin
- */
 const checkResourceOwnership = (getUserIdFromResource) => {
   return async (req, res, next) => {
     try {
@@ -208,10 +181,6 @@ const checkResourceOwnership = (getUserIdFromResource) => {
   };
 };
 
-/**
- * Appointment access middleware
- * Checks if user can access the appointment (client, provider, or admin)
- */
 const checkAppointmentAccess = async (req, res, next) => {
   try {
     if (!req.user) {

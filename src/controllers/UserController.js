@@ -4,10 +4,7 @@ const User = require('../models/User');
 const Appointment = require('../models/Appointment');
 
 class UserController {
-  /**
-   * Get all users (admin only)
-   * GET /api/users
-   */
+
   static async getAll(req, res, next) {
     try {
       // Only admins can list all users
@@ -21,15 +18,15 @@ class UserController {
       const offset = (page - 1) * limit;
 
       let query = User.query()
-        .select('id', 'email', 'firstName', 'lastName', 'phone', 'role', 
-                'timezone', 'isActive', 'emailVerified', 'createdAt', 'lastLoginAt');
+        .select('id', 'email', 'first_name', 'last_name', 'phone', 'role',
+                'timezone', 'is_active', 'email_verified', 'created_at', 'updated_at');
 
       // Apply filters
       if (role) {
         query = query.where('role', role);
       }
       if (isActive !== undefined) {
-        query = query.where('isActive', isActive === 'true');
+        query = query.where('is_active', isActive === 'true');
       }
 
       // Get total count
@@ -40,7 +37,7 @@ class UserController {
       const users = await query
         .limit(limit)
         .offset(offset)
-        .orderBy('createdAt', 'desc');
+        .orderBy('created_at', 'desc');
 
       res.json({
         users,
@@ -56,10 +53,6 @@ class UserController {
     }
   }
 
-  /**
-   * Get user by ID
-   * GET /api/users/:id
-   */
   static async getById(req, res, next) {
     try {
       const userId = req.params.id;
@@ -73,9 +66,9 @@ class UserController {
 
       const user = await User.query()
         .findById(userId)
-        .select('id', 'email', 'firstName', 'lastName', 'phone', 'role', 
-                'timezone', 'preferences', 'isActive', 'emailVerified', 
-                'createdAt', 'updatedAt', 'lastLoginAt');
+        .select('id', 'email', 'first_name', 'last_name', 'phone', 'role',
+                'timezone', 'preferences', 'is_active', 'email_verified',
+                'created_at', 'updated_at');
 
       if (!user) {
         return res.status(404).json({ 
@@ -86,8 +79,8 @@ class UserController {
       // Include additional stats for admins
       if (req.user.role === 'admin') {
         const appointmentStats = await Appointment.query()
-          .where('clientId', userId)
-          .orWhere('providerId', userId)
+          .where('client_id', userId)
+          .orWhere('provider_id', userId)
           .select('status')
           .count('* as count')
           .groupBy('status');
@@ -103,10 +96,6 @@ class UserController {
     }
   }
 
-  /**
-   * Create new user (admin only)
-   * POST /api/users
-   */
   static async create(req, res, next) {
     try {
       // Only admins can create users directly
@@ -157,8 +146,16 @@ class UserController {
 
       // Create user
       const user = await User.query().insert({
-        ...value,
-        password: hashedPassword
+        email: value.email,
+        password_hash: hashedPassword,
+        first_name: value.firstName,
+        last_name: value.lastName,
+        phone: value.phone,
+        role: value.role,
+        timezone: value.timezone,
+        is_active: value.isActive,
+        email_verified: value.emailVerified,
+        preferences: value.preferences
       });
 
       // Remove password from response
@@ -173,10 +170,6 @@ class UserController {
     }
   }
 
-  /**
-   * Update user
-   * PUT /api/users/:id
-   */
   static async update(req, res, next) {
     try {
       const userId = req.params.id;
@@ -220,14 +213,21 @@ class UserController {
         });
       }
 
-      // Update user
+      // Update user - map camelCase input to snake_case columns
+      const updateData = { updated_at: new Date() };
+      if (value.firstName) updateData.first_name = value.firstName;
+      if (value.lastName) updateData.last_name = value.lastName;
+      if (value.phone) updateData.phone = value.phone;
+      if (value.timezone) updateData.timezone = value.timezone;
+      if (value.preferences) updateData.preferences = value.preferences;
+      if (value.role) updateData.role = value.role;
+      if (value.isActive !== undefined) updateData.is_active = value.isActive;
+      if (value.emailVerified !== undefined) updateData.email_verified = value.emailVerified;
+
       const user = await User.query()
-        .patchAndFetchById(userId, {
-          ...value,
-          updatedAt: new Date()
-        })
-        .select('id', 'email', 'firstName', 'lastName', 'phone', 'role', 
-                'timezone', 'preferences', 'isActive', 'emailVerified');
+        .patchAndFetchById(userId, updateData)
+        .select('id', 'email', 'first_name', 'last_name', 'phone', 'role',
+                'timezone', 'preferences', 'is_active', 'email_verified');
 
       res.json({
         message: 'User updated successfully',
@@ -238,10 +238,6 @@ class UserController {
     }
   }
 
-  /**
-   * Delete/deactivate user
-   * DELETE /api/users/:id
-   */
   static async delete(req, res, next) {
     try {
       const userId = req.params.id;
@@ -271,7 +267,7 @@ class UserController {
       // Check for active appointments
       const activeAppointments = await Appointment.query()
         .where(builder => {
-          builder.where('clientId', userId).orWhere('providerId', userId);
+          builder.where('client_id', userId).orWhere('provider_id', userId);
         })
         .whereIn('status', ['scheduled', 'confirmed'])
         .count('id as count')
@@ -286,9 +282,9 @@ class UserController {
       // Soft delete by deactivating
       await User.query()
         .findById(userId)
-        .patch({ 
-          isActive: false,
-          updatedAt: new Date()
+        .patch({
+          is_active: false,
+          updated_at: new Date()
         });
 
       res.json({
@@ -299,10 +295,6 @@ class UserController {
     }
   }
 
-  /**
-   * Get user's appointments
-   * GET /api/users/:id/appointments
-   */
   static async getUserAppointments(req, res, next) {
     try {
       const userId = req.params.id;
@@ -328,9 +320,9 @@ class UserController {
 
       // Filter by user role
       if (user.role === 'client') {
-        query = query.where('clientId', userId);
+        query = query.where('client_id', userId);
       } else if (user.role === 'provider') {
-        query = query.where('providerId', userId);
+        query = query.where('provider_id', userId);
       }
 
       // Apply filters
@@ -338,10 +330,10 @@ class UserController {
         query = query.where('status', status);
       }
       if (startDate) {
-        query = query.where('scheduledStart', '>=', startDate);
+        query = query.where('appointment_datetime', '>=', startDate);
       }
       if (endDate) {
-        query = query.where('scheduledEnd', '<=', endDate);
+        query = query.where('appointment_datetime', '<=', endDate);
       }
 
       // Get total count
@@ -352,14 +344,14 @@ class UserController {
       const appointments = await query
         .withGraphFetched('[client, provider, service]')
         .modifyGraph('client', builder => {
-          builder.select('id', 'firstName', 'lastName', 'email');
+          builder.select('id', 'first_name', 'last_name', 'email');
         })
         .modifyGraph('provider', builder => {
-          builder.select('id', 'firstName', 'lastName', 'email');
+          builder.select('id', 'first_name', 'last_name', 'email');
         })
         .limit(limit)
         .offset(offset)
-        .orderBy('scheduledStart', 'desc');
+        .orderBy('appointment_datetime', 'desc');
 
       res.json({
         appointments,
@@ -375,29 +367,25 @@ class UserController {
     }
   }
 
-  /**
-   * Get providers list (for clients)
-   * GET /api/users/providers
-   */
   static async getProviders(req, res, next) {
     try {
       const { category, isActive = true } = req.query;
 
       let query = User.query()
         .where('role', 'provider')
-        .where('isActive', isActive)
-        .select('id', 'firstName', 'lastName', 'email', 'phone', 'timezone');
+        .where('is_active', isActive)
+        .select('id', 'first_name', 'last_name', 'email', 'phone', 'timezone');
 
       // If category specified, join with services
       if (category) {
         query = query
           .joinRelated('services')
           .where('services.category', category)
-          .where('services.isActive', true)
+          .where('services.is_active', true)
           .distinct('users.id');
       }
 
-      const providers = await query.orderBy('lastName', 'asc');
+      const providers = await query.orderBy('last_name', 'asc');
 
       res.json(providers);
     } catch (error) {
@@ -405,10 +393,6 @@ class UserController {
     }
   }
 
-  /**
-   * Reset user password (admin only)
-   * POST /api/users/:id/reset-password
-   */
   static async resetPassword(req, res, next) {
     try {
       const userId = req.params.id;
@@ -446,9 +430,9 @@ class UserController {
       // Update password
       await User.query()
         .findById(userId)
-        .patch({ 
-          password: hashedPassword,
-          updatedAt: new Date()
+        .patch({
+          password_hash: hashedPassword,
+          updated_at: new Date()
         });
 
       res.json({
@@ -459,10 +443,6 @@ class UserController {
     }
   }
 
-  /**
-   * Get user statistics (admin only)
-   * GET /api/users/stats
-   */
   static async getStatistics(req, res, next) {
     try {
       // Only admins can view statistics
@@ -480,9 +460,9 @@ class UserController {
 
       // Active vs inactive users
       const usersByStatus = await User.query()
-        .select('isActive')
+        .select('is_active')
         .count('* as count')
-        .groupBy('isActive');
+        .groupBy('is_active');
 
       // New users this month
       const startOfMonth = new Date();
@@ -490,7 +470,7 @@ class UserController {
       startOfMonth.setHours(0, 0, 0, 0);
 
       const newUsersThisMonth = await User.query()
-        .where('createdAt', '>=', startOfMonth)
+        .where('created_at', '>=', startOfMonth)
         .count('* as count')
         .first();
 

@@ -121,7 +121,7 @@ describe('Security Validation Tests', () => {
 
   describe('Security Patches Validation', () => {
     test('SEC-005: Exposed bot token is detected and blocked', () => {
-      const exposedToken = '8124276494:AAEXy61BMBQcrz6TCCNHRI3_4d6fbXERy8M';
+      const exposedToken = 'TELEGRAM_BOT_TOKEN_PLACEHOLDER';
       
       const isValid = securityPatches.validateBotToken(exposedToken);
       
@@ -209,7 +209,7 @@ describe('Security Validation Tests', () => {
   describe('Security Audit', () => {
     test('SEC-011: Security audit identifies vulnerabilities', () => {
       const insecureConfig = {
-        TELEGRAM_BOT_TOKEN: '8124276494:AAEXy61BMBQcrz6TCCNHRI3_4d6fbXERy8M',
+        TELEGRAM_BOT_TOKEN: 'TELEGRAM_BOT_TOKEN_PLACEHOLDER',
         ADMIN_USER_IDS: ['1234', '7930798268'],
         SUPPORT_SYSTEM_ENABLED: 'true',
         SUPPORT_GROUP_ID: '',

@@ -3,7 +3,7 @@
   "generated_at": "2025-08-08T00:33:49.424Z",
   "vulnerabilities_identified": 5,
   "vulnerabilities": {
-    "exposedBotToken": "8124276494:AAEXy61BMBQcrz6TCCNHRI3_4d6fbXERy8M",
+    "exposedBotToken": "TELEGRAM_BOT_TOKEN_PLACEHOLDER",
     "unauthorizedAdminId": "7930798268",
     "missingSupport": "SUPPORT_GROUP_ID not configured",
     "weakRateLimit": "Insufficient rate limiting",

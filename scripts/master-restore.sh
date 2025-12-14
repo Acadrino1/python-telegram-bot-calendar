@@ -61,7 +61,7 @@ print_success "Backup created in $BACKUP_DIR"
 
 # Step 2: Check for exposed token
 print_status "Checking for exposed bot token..."
-if grep -q "8124276494:AAEXy61BMBQcrz6TCCNHRI3_4d6fbXERy8M" .env 2>/dev/null; then
+if grep -q "TELEGRAM_BOT_TOKEN_PLACEHOLDER" .env 2>/dev/null; then
     print_error "EXPOSED BOT TOKEN DETECTED!"
     echo ""
     echo -e "${RED}════════════════════════════════════════════════════════════════${NC}"

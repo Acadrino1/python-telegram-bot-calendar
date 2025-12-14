@@ -8,18 +8,18 @@ class AvailabilityException extends Model {
   static get jsonSchema() {
     return {
       type: 'object',
-      required: ['providerId', 'date', 'type'],
+      required: ['provider_id', 'date', 'type'],
       properties: {
         id: { type: 'integer' },
-        providerId: { type: 'integer' },
+        provider_id: { type: 'integer' },
         date: { type: 'string', format: 'date' },
         type: { type: 'string', enum: ['unavailable', 'special_hours'] },
         hours: { type: 'array' },
         reason: { type: 'string' },
         recurring: { type: 'boolean', default: false },
-        recurringEndDate: { type: 'string', format: 'date' },
-        createdAt: { type: 'string', format: 'date-time' },
-        updatedAt: { type: 'string', format: 'date-time' }
+        recurring_end_date: { type: 'string', format: 'date' },
+        created_at: { type: 'string', format: 'date-time' },
+        updated_at: { type: 'string', format: 'date-time' }
       }
     };
   }
@@ -32,7 +32,7 @@ class AvailabilityException extends Model {
         relation: Model.BelongsToOneRelation,
         modelClass: User,
         join: {
-          from: 'availability_exceptions.providerId',
+          from: 'availability_exceptions.provider_id',
           to: 'users.id'
         }
       }
@@ -40,12 +40,12 @@ class AvailabilityException extends Model {
   }
 
   $beforeInsert() {
-    this.createdAt = new Date().toISOString();
-    this.updatedAt = new Date().toISOString();
+    this.created_at = new Date().toISOString();
+    this.updated_at = new Date().toISOString();
   }
 
   $beforeUpdate() {
-    this.updatedAt = new Date().toISOString();
+    this.updated_at = new Date().toISOString();
   }
 }
 

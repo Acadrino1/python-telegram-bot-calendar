@@ -1,17 +1,23 @@
 const logger = require('../utils/logger');
 
-/**
- * Global error handler middleware
- * Handles all unhandled errors and sends appropriate responses
- */
+const sanitizeBody = (body) => {
+  if (!body || typeof body !== 'object') return undefined;
+  const sensitiveFields = ['password', 'password_hash', 'token', 'secret', 'authorization', 'apiKey', 'api_key'];
+  const sanitized = { ...body };
+  for (const field of sensitiveFields) {
+    if (sanitized[field]) sanitized[field] = '[REDACTED]';
+  }
+  return sanitized;
+};
+
 const errorHandler = (error, req, res, next) => {
-  // Log the error
+  // Log the error with sanitized body
   logger.logError(error, {
     method: req.method,
     path: req.path,
     params: req.params,
     query: req.query,
-    body: req.body,
+    body: sanitizeBody(req.body),
     userId: req.userId,
     userRole: req.user?.role,
     ip: req.ip,
@@ -130,20 +136,12 @@ const errorHandler = (error, req, res, next) => {
   res.status(statusCode).json(errorResponse);
 };
 
-/**
- * Async error wrapper
- * Wraps async route handlers to catch errors and pass them to error handler
- */
 const asyncHandler = (fn) => {
   return (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
 };
 
-/**
- * Not found middleware
- * Handles requests to non-existent endpoints
- */
 const notFoundHandler = (req, res, next) => {
   const error = new Error(`Route ${req.method} ${req.originalUrl} not found`);
   error.status = 404;
@@ -151,9 +149,6 @@ const notFoundHandler = (req, res, next) => {
   next(error);
 };
 
-/**
- * Custom error class for application-specific errors
- */
 class AppError extends Error {
   constructor(message, statusCode = 500, code = 'APP_ERROR', details = null) {
     super(message);
@@ -167,9 +162,6 @@ class AppError extends Error {
   }
 }
 
-/**
- * Predefined error types
- */
 class ValidationError extends AppError {
   constructor(message, details = null) {
     super(message, 400, 'VALIDATION_ERROR', details);

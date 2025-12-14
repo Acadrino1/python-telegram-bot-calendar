@@ -1,10 +1,8 @@
 #!/usr/bin/env node
 
-require('dotenv').config();
+require('dotenv').config({ override: true });
 const fs = require('fs');
 const path = require('path');
-// const TelegramBot = require('./SimpleTelegramBot');
-const TelegramBot = require('./EnhancedTelegramBot'); // Using enhanced version with conflict detection
 
 // Ensure data directory exists
 const dataDir = path.join(__dirname, '../../data');
@@ -24,64 +22,106 @@ if (!process.env.TELEGRAM_BOT_TOKEN) {
   process.exit(1);
 }
 
-// Validate support system configuration
-function validateSupportConfig() {
-  const supportEnabled = process.env.SUPPORT_SYSTEM_ENABLED === 'true';
-  
-  if (supportEnabled) {
-    if (!process.env.SUPPORT_GROUP_ID) {
-      console.warn('⚠️  Warning: SUPPORT_SYSTEM_ENABLED is true but SUPPORT_GROUP_ID is not set');
-      console.log('Live support features will be disabled until configured properly.');
-      return false;
-    }
-    
-    console.log('✅ Support system configuration validated');
-    console.log(`   Support Group ID: ${process.env.SUPPORT_GROUP_ID}`);
-    console.log(`   Anonymize Data: ${process.env.SUPPORT_ANONYMIZE_DATA || 'true'}`);
-    console.log(`   Max Tickets: ${process.env.SUPPORT_MAX_TICKETS || '50'}`);
-    return true;
-  }
-  
-  console.log('ℹ️  Support system is disabled');
-  return false;
+// Check for admin Telegram ID (required for booking approval workflow)
+const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID || process.env.ADMIN_USER_ID;
+if (!ADMIN_TELEGRAM_ID) {
+  console.warn('⚠️  WARNING: ADMIN_TELEGRAM_ID is not set in .env file');
+  console.warn('   Admin approval workflow will NOT work!');
+  console.warn('   Bookings will be created but no admin will be notified.');
+  console.warn('   To fix: Add ADMIN_TELEGRAM_ID=your_telegram_id to .env file');
+  console.warn('');
+} else {
+  console.log(`✅ Admin Telegram ID configured: ${ADMIN_TELEGRAM_ID}`);
 }
 
-const supportConfigValid = validateSupportConfig();
-
-console.log('🚀 Starting Appointment Scheduler Telegram Bot...');
+console.log('🚀 Starting Lodge Scheduler Bot...');
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-// Initialize database
+// Initialize database with error handling
 const { Model } = require('objection');
 const Knex = require('knex');
-const knexConfig = require('../../database/knexfile')[process.env.NODE_ENV || 'development'];
-const knex = Knex(knexConfig);
-Model.knex(knex);
 
-// Prepare bot configuration with support system settings
-const botConfig = {
-  supportGroupId: process.env.SUPPORT_GROUP_ID,
-  supportEnabled: supportConfigValid,
-  anonymizeUserData: process.env.SUPPORT_ANONYMIZE_DATA === 'true',
-  maxSupportTickets: parseInt(process.env.SUPPORT_MAX_TICKETS) || 50,
-  ticketTimeoutMinutes: parseInt(process.env.SUPPORT_TICKET_TIMEOUT) || 30,
-  autoEscalateMinutes: parseInt(process.env.SUPPORT_AUTO_ESCALATE) || 60,
-  adminUserIds: process.env.ADMIN_USER_IDS ? 
-    process.env.ADMIN_USER_IDS.split(',').map(id => parseInt(id.trim())) : []
-};
+let knex;
+const dbClient = process.env.DB_CLIENT || 'sqlite3';
 
-console.log('🔧 Bot Configuration:');
-console.log(`   Support Enabled: ${botConfig.supportEnabled}`);
-if (botConfig.supportEnabled) {
-  console.log(`   Support Group: ${botConfig.supportGroupId}`);
-  console.log(`   Max Tickets: ${botConfig.maxSupportTickets}`);
-  console.log(`   Admin Users: ${botConfig.adminUserIds.length} configured`);
+try {
+  if (dbClient === 'mysql2') {
+    // Use MySQL when running in Docker
+    knex = Knex({
+      client: 'mysql2',
+      connection: {
+        host: process.env.DB_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT || '3306'),
+        user: process.env.DB_USER || 'appuser',
+        password: process.env.DB_PASSWORD || 'apppassword123',
+        database: process.env.DB_NAME || 'appointment_scheduler'
+      },
+      pool: { min: 0, max: 10 }
+    });
+    Model.knex(knex);
+    console.log(`🔗 MySQL database connected (${process.env.DB_HOST}:${process.env.DB_PORT})`);
+  } else {
+    // Use SQLite for local development
+    const dbPath = path.join(__dirname, '../../database/test_lodge_scheduler.sqlite3');
+    knex = Knex({
+      client: 'sqlite3',
+      connection: { filename: dbPath },
+      useNullAsDefault: true
+    });
+    Model.knex(knex);
+    console.log('🔗 Database connected successfully (test_lodge_scheduler.sqlite3)');
+  }
+} catch (error) {
+  console.warn('⚠️  Database connection failed, using fallback:', error.message);
+
+  // Fallback to SQLite database
+  const dbPath = path.join(__dirname, '../../lodge_scheduler.sqlite3');
+  knex = Knex({
+    client: 'sqlite3',
+    connection: { filename: dbPath },
+    useNullAsDefault: true
+  });
+  Model.knex(knex);
+  console.log('🔗 SQLite fallback database connected');
 }
 
-// Start the bot
-const bot = new TelegramBot(botConfig);
-bot.start();
+console.log('🔧 Bot Configuration:');
+console.log('   Mode: Lodge Scheduler');
+console.log('   Services: Appointment Booking');
+console.log('   Access: Open booking system');
 
-console.log('✅ Bot is running!');
-console.log('Open Telegram and search for your bot to start using it.');
+// Start the bot - using SimpleTelegramBot directly to avoid memory issues
+// EnhancedBotForScale creates overlapping memory management systems causing OOM crashes
+const SimpleTelegramBot = require('./SimpleTelegramBot');
+const bot = new SimpleTelegramBot();
+
+// Note: SimpleTelegramBot already has EnhancedBotEngine with proper memory management
+
+// Initialize broadcast integration (disabled for now - fix import if needed)
+// if (process.env.ENABLE_BROADCASTING === 'true') {
+//   const BroadcastIntegration = require('./BroadcastIntegration');
+//   const broadcastIntegration = new BroadcastIntegration(bot);
+//   broadcastIntegration.initialize().then(() => {
+
+//   }).catch(error => {
+//     console.error('Failed to initialize broadcast integration:', error);
+//   });
+// }
+
+// Start the bot
+try {
+  bot.start();
+} catch (error) {
+  console.error('Failed to start bot:', error);
+  process.exit(1);
+}
+
+console.log('✅ Lodge Scheduler Bot is running!');
+console.log('📅 Features:');
+console.log('   ✅ Visual calendar display');
+console.log('   🟡 Real-time availability');
+console.log('   📱 Mobile-optimized interface');
+console.log('   🔔 Appointment reminders');
+console.log('');
+console.log('Open Telegram and message your bot to book appointments.');
 console.log('Press Ctrl+C to stop the bot.');

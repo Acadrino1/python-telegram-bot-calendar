@@ -2,10 +2,7 @@ const Joi = require('joi');
 const Service = require('../models/Service');
 
 class ServiceController {
-  /**
-   * Get all services
-   * GET /api/services
-   */
+
   static async getAll(req, res, next) {
     try {
       // Parse query parameters
@@ -37,10 +34,6 @@ class ServiceController {
     }
   }
 
-  /**
-   * Get service by ID
-   * GET /api/services/:id
-   */
   static async getById(req, res, next) {
     try {
       const service = await Service.query()
@@ -66,10 +59,6 @@ class ServiceController {
     }
   }
 
-  /**
-   * Create new service
-   * POST /api/services
-   */
   static async create(req, res, next) {
     try {
       // Only providers and admins can create services
@@ -127,10 +116,6 @@ class ServiceController {
     }
   }
 
-  /**
-   * Update service
-   * PUT /api/services/:id
-   */
   static async update(req, res, next) {
     try {
       const serviceId = req.params.id;
@@ -194,10 +179,6 @@ class ServiceController {
     }
   }
 
-  /**
-   * Delete service
-   * DELETE /api/services/:id
-   */
   static async delete(req, res, next) {
     try {
       const serviceId = req.params.id;
@@ -247,10 +228,6 @@ class ServiceController {
     }
   }
 
-  /**
-   * Get service statistics
-   * GET /api/services/:id/stats
-   */
   static async getStats(req, res, next) {
     try {
       const serviceId = req.params.id;
@@ -308,10 +285,6 @@ class ServiceController {
     }
   }
 
-  /**
-   * Get available providers for a service category
-   * GET /api/services/providers/:category
-   */
   static async getProvidersByCategory(req, res, next) {
     try {
       const { category } = req.params;

@@ -1,5 +1,13 @@
 const nodemailer = require('nodemailer');
-const twilio = require('twilio');
+
+// Make Twilio optional for core functionality
+let twilio;
+try {
+  twilio = require('twilio');
+} catch (error) {
+  console.warn('⚠️  Twilio not available - SMS notifications disabled');
+  twilio = null;
+}
 const moment = require('moment-timezone');
 const cron = require('node-cron');
 const Notification = require('../models/Notification');
@@ -7,20 +15,54 @@ const NotificationTemplate = require('../models/NotificationTemplate');
 const User = require('../models/User');
 const Appointment = require('../models/Appointment');
 const { NotificationType, NotificationStatus } = require('../types');
+const TemplateProcessor = require('../utils/TemplateProcessor');
+const DateTimeUtils = require('../utils/DateTimeUtils');
+const bookingConfig = require('../../config/booking.config');
+const centralErrorHandler = require('../utils/CentralErrorHandler');
+const logger = require('../utils/logger');
 
 class NotificationService {
-  constructor() {
+  constructor(bot = null) {
     this.emailTransporter = null;
     this.twilioClient = null;
+    this.bot = bot; // Telegram bot instance for group notifications
     this.defaultTimeZone = process.env.DEFAULT_TIMEZONE || 'America/New_York';
     
+    // Initialize utilities
+    this.templateProcessor = new TemplateProcessor(this.defaultTimeZone);
+    this.dateTimeUtils = new DateTimeUtils(this.defaultTimeZone);
+    
+    // Retry configuration
+    this.config = {
+      maxRetries: 3,
+      retryBackoffMinutes: [5, 15, 30],
+      batchSize: 25
+    };
+    
+    // Group notification settings
+    this.groupSettings = {
+      chatId: process.env.TELEGRAM_GROUP_CHAT_ID || bookingConfig?.notifications?.groupChatId,
+      enabled: true,
+      templates: {
+        newBooking: '🆕 *New Booking Alert*\n\n📱 Customer: {customerName}\n🔧 Service: {serviceName}\n📅 Date: {date}\n⏰ Time: {time}',
+        cancellation: '❌ *Booking Cancelled*\n\n📱 Customer: {customerName}\n🔧 Service: {serviceName}\n📅 Date: {date}\n⏰ Time: {time}\n\n✅ This slot is now available'
+      }
+    };
+    
+    // Processing state
+    this.isRunning = false;
+    
+    // Cron job references for cleanup
+    this.cronJobs = [];
+    
     this.initializeProviders();
+    this.setupTemplateHelpers();
     this.startNotificationProcessor();
+    
+    // Register cleanup handler
+    centralErrorHandler.registerCleanup(() => this.cleanup());
   }
 
-  /**
-   * Initialize email and SMS providers
-   */
   initializeProviders() {
     // Initialize email transporter
     if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
@@ -44,35 +86,66 @@ class NotificationService {
     }
   }
 
-  /**
-   * Start the notification processor (runs every minute)
-   */
-  startNotificationProcessor() {
-    // Process pending notifications every minute
-    cron.schedule('* * * * *', async () => {
-      try {
-        await this.processPendingNotifications();
-      } catch (error) {
-        console.error('Error processing pending notifications:', error);
-      }
+  setupTemplateHelpers() {
+    this.templateProcessor.registerDefaultHelpers();
+    
+    // Register custom helpers for notifications
+    this.templateProcessor.registerHelper('timeUntil', (data, path) => {
+      const date = this.templateProcessor.getNestedProperty(data, path);
+      if (!date) return '';
+      const timeInfo = this.dateTimeUtils.getTimeUntil(date);
+      return timeInfo ? timeInfo.text : '';
     });
-
-    // Clean up old notifications daily at 2 AM
-    cron.schedule('0 2 * * *', async () => {
-      try {
-        await this.cleanupOldNotifications();
-      } catch (error) {
-        console.error('Error cleaning up notifications:', error);
-      }
+    
+    this.templateProcessor.registerHelper('businessHours', () => {
+      return this.dateTimeUtils.getBusinessHoursDisplay().full;
     });
-
-    console.log('Notification processor started');
   }
 
-  /**
-   * Send appointment confirmation
-   * @param {Object} appointment - Appointment with relations
-   */
+  startNotificationProcessor() {
+    console.log('🔔 Enhanced Notification Service starting...');
+    
+    try {
+      // Process pending notifications every minute
+      const pendingJob = cron.schedule('* * * * *', centralErrorHandler.wrapAsync(async () => {
+        if (!this.isRunning) {
+          await this.processPendingNotifications();
+        }
+      }, 'NotificationService.processPending'), {
+        scheduled: true
+      });
+      this.cronJobs.push(pendingJob);
+      centralErrorHandler.registerCronJob(pendingJob);
+
+      // Process retry queue every 5 minutes
+      const retryJob = cron.schedule('*/5 * * * *', centralErrorHandler.wrapAsync(async () => {
+        await this.processRetryQueue();
+      }, 'NotificationService.processRetry'), {
+        scheduled: true
+      });
+      this.cronJobs.push(retryJob);
+      centralErrorHandler.registerCronJob(retryJob);
+
+      // Clean up old notifications daily at 2 AM
+      const maintenanceJob = cron.schedule('0 2 * * *', centralErrorHandler.wrapAsync(async () => {
+        try {
+          await this.performDailyMaintenance();
+        } catch (error) {
+          logger.error('Error in daily maintenance:', error);
+        }
+      }, 'NotificationService.dailyMaintenance'), {
+        scheduled: true
+      });
+      this.cronJobs.push(maintenanceJob);
+      centralErrorHandler.registerCronJob(maintenanceJob);
+
+      console.log('✅ Enhanced Notification Service started');
+    } catch (error) {
+      logger.error('Error starting notification processor:', error);
+      throw error;
+    }
+  }
+
   async sendAppointmentConfirmation(appointment) {
     try {
       const client = appointment.client;
@@ -126,11 +199,6 @@ class NotificationService {
     }
   }
 
-  /**
-   * Send appointment cancellation notification
-   * @param {Object} appointment - Cancelled appointment
-   * @param {string} reason - Cancellation reason
-   */
   async sendAppointmentCancellation(appointment, reason) {
     try {
       const client = appointment.client;
@@ -186,11 +254,6 @@ class NotificationService {
     }
   }
 
-  /**
-   * Send appointment reschedule notification
-   * @param {Object} appointment - Rescheduled appointment
-   * @param {string} oldDateTime - Old appointment date/time
-   */
   async sendAppointmentReschedule(appointment, oldDateTime) {
     try {
       const client = appointment.client;
@@ -235,11 +298,6 @@ class NotificationService {
     }
   }
 
-  /**
-   * Send waitlist notification
-   * @param {Object} waitlistEntry - Waitlist entry with relations
-   * @param {Object} availabilityData - Available slot data
-   */
   async sendWaitlistNotification(waitlistEntry, availabilityData) {
     try {
       const client = waitlistEntry.client;
@@ -288,12 +346,6 @@ class NotificationService {
     }
   }
 
-  /**
-   * Schedule a reminder notification
-   * @param {Object} appointment - Appointment object
-   * @param {number} hours - Hours before appointment
-   * @param {Date} scheduledFor - When to send the reminder
-   */
   async scheduleReminder(appointment, hours, scheduledFor) {
     try {
       const client = appointment.client;
@@ -335,10 +387,6 @@ class NotificationService {
     }
   }
 
-  /**
-   * Queue a notification for sending
-   * @param {Object} notificationData - Notification data
-   */
   async queueNotification(notificationData) {
     try {
       const {
@@ -387,35 +435,57 @@ class NotificationService {
     }
   }
 
-  /**
-   * Process pending notifications
-   */
   async processPendingNotifications() {
+    if (this.isRunning) return;
+    
+    this.isRunning = true;
+    
     try {
       const pendingNotifications = await Notification.query()
         .where('status', NotificationStatus.PENDING)
         .where('scheduled_for', '<=', new Date())
-        .where('retry_count', '<', 3)
-        .orderBy('scheduled_for');
+        .where('retry_count', '<', this.config.maxRetries)
+        .orderBy('scheduled_for')
+        .limit(this.config.batchSize);
 
-      for (const notification of pendingNotifications) {
-        try {
-          await this.sendNotification(notification);
-        } catch (error) {
-          console.error(`Failed to send notification ${notification.id}:`, error);
-          await this.handleNotificationError(notification, error);
-        }
+      if (pendingNotifications.length === 0) {
+        this.isRunning = false;
+        return;
       }
+
+      console.log(`📋 Processing ${pendingNotifications.length} pending notifications`);
+
+      // Batch process notifications by type for better performance
+      const notificationsByType = pendingNotifications.reduce((acc, notification) => {
+        if (!acc[notification.type]) acc[notification.type] = [];
+        acc[notification.type].push(notification);
+        return acc;
+      }, {});
+
+      // Process each type in parallel
+      await Promise.all(Object.entries(notificationsByType).map(async ([type, notifications]) => {
+        // Process notifications of same type in batches to avoid overwhelming services
+        const batchSize = type === NotificationType.EMAIL ? 5 : 10;
+        for (let i = 0; i < notifications.length; i += batchSize) {
+          const batch = notifications.slice(i, i + batchSize);
+          await Promise.allSettled(batch.map(async (notification) => {
+            try {
+              await this.sendNotification(notification);
+            } catch (error) {
+              console.error(`Failed to send notification ${notification.id}:`, error);
+              await this.handleNotificationError(notification, error);
+            }
+          }));
+        }
+      }));
 
     } catch (error) {
       console.error('Error processing pending notifications:', error);
+    } finally {
+      this.isRunning = false;
     }
   }
 
-  /**
-   * Send a single notification
-   * @param {Object} notification - Notification record
-   */
   async sendNotification(notification) {
     try {
       let result;
@@ -442,10 +512,6 @@ class NotificationService {
     }
   }
 
-  /**
-   * Send email notification
-   * @param {Object} notification - Email notification
-   */
   async sendEmail(notification) {
     if (!this.emailTransporter) {
       throw new Error('Email transporter not configured');
@@ -462,10 +528,6 @@ class NotificationService {
     return this.emailTransporter.sendMail(mailOptions);
   }
 
-  /**
-   * Send SMS notification
-   * @param {Object} notification - SMS notification
-   */
   async sendSms(notification) {
     if (!this.twilioClient) {
       throw new Error('Twilio client not configured');
@@ -478,11 +540,6 @@ class NotificationService {
     });
   }
 
-  /**
-   * Handle notification sending error
-   * @param {Object} notification - Failed notification
-   * @param {Error} error - Error that occurred
-   */
   async handleNotificationError(notification, error) {
     const retryCount = notification.retry_count + 1;
     const maxRetries = 3;
@@ -507,10 +564,6 @@ class NotificationService {
     }
   }
 
-  /**
-   * Cancel notifications for an appointment
-   * @param {number} appointmentId - Appointment ID
-   */
   async cancelAppointmentNotifications(appointmentId) {
     try {
       await Notification.query()
@@ -526,77 +579,41 @@ class NotificationService {
     }
   }
 
-  /**
-   * Build template data for notifications
-   * @param {Object} appointment - Appointment
-   * @param {Object} client - Client user
-   * @param {Object} provider - Provider user
-   * @param {Object} service - Service
-   */
-  buildTemplateData(appointment, client, provider, service) {
-    return {
-      client_name: client.getDisplayName(),
-      client_first_name: client.first_name,
-      provider_name: provider.getDisplayName(),
-      service_name: service.name,
-      service_description: service.description || '',
-      appointment_datetime: this.formatDateTime(appointment.appointment_datetime, client.timezone),
-      appointment_date: this.formatDate(appointment.appointment_datetime, client.timezone),
-      appointment_time: this.formatTime(appointment.appointment_datetime, client.timezone),
-      duration_minutes: appointment.duration_minutes,
-      duration_formatted: service.getFormattedDuration(),
-      price: service.getFormattedPrice(),
-      cancellation_hours: service.getCancellationHours(),
-      appointment_uuid: appointment.uuid,
-      appointment_id: appointment.id,
-      provider_address: 'Main Clinic Location', // You can make this configurable
-      provider_phone: provider.phone || 'Contact clinic'
-    };
+  buildTemplateData(appointment, client, provider, service, options = {}) {
+    return this.templateProcessor.buildAppointmentTemplateData(
+      appointment, 
+      client, 
+      provider, 
+      service, 
+      {
+        businessName: 'Lodge Mobile',
+        businessAddress: 'Main Location',
+        businessPhone: process.env.BUSINESS_PHONE,
+        ...options
+      }
+    );
   }
 
-  /**
-   * Process template with data placeholders
-   * @param {string} template - Template string
-   * @param {Object} data - Data to replace placeholders
-   */
-  processTemplate(template, data) {
-    let processed = template;
-    
-    Object.keys(data).forEach(key => {
-      const placeholder = `{${key}}`;
-      const value = data[key] || '';
-      processed = processed.replace(new RegExp(placeholder, 'g'), value);
-    });
-
-    return processed;
+  processTemplate(template, data, options = {}) {
+    return this.templateProcessor.processTemplate(template, data, options);
   }
 
-  /**
-   * Format date and time for display
-   */
   formatDateTime(dateTime, timezone = this.defaultTimeZone) {
-    return moment.tz(dateTime, timezone).format('MMMM Do YYYY, h:mm A z');
+    return this.dateTimeUtils.format(dateTime, this.dateTimeUtils.formats.displayWithTimeZone, timezone);
   }
 
   formatDate(dateTime, timezone = this.defaultTimeZone) {
-    return moment.tz(dateTime, timezone).format('MMMM Do YYYY');
+    return this.dateTimeUtils.format(dateTime, this.dateTimeUtils.formats.display, timezone);
   }
 
   formatTime(dateTime, timezone = this.defaultTimeZone) {
-    return moment.tz(dateTime, timezone).format('h:mm A');
+    return this.dateTimeUtils.format(dateTime, this.dateTimeUtils.formats.time12, timezone);
   }
 
-  /**
-   * Convert plain text to HTML for email
-   * @param {string} text - Plain text
-   */
   convertToHtml(text) {
-    return text.replace(/\n/g, '<br>');
+    return this.templateProcessor.textToHtml(text);
   }
 
-  /**
-   * Clean up old notifications (older than 30 days)
-   */
   async cleanupOldNotifications() {
     try {
       const cutoffDate = moment().subtract(30, 'days').toDate();
@@ -615,22 +632,19 @@ class NotificationService {
     }
   }
 
-  /**
-   * Get notification statistics
-   * @param {string} startDate - Start date
-   * @param {string} endDate - End date
-   */
   async getNotificationStatistics(startDate, endDate) {
     try {
       const notifications = await Notification.query()
         .where('created_at', '>=', startDate)
-        .where('created_at', '<=', endDate);
+        .where('created_at', '<=', endDate)
+        .limit(10000); // Prevent unbounded queries
 
       const stats = {
         total: notifications.length,
         by_type: {
           email: notifications.filter(n => n.type === NotificationType.EMAIL).length,
-          sms: notifications.filter(n => n.type === NotificationType.SMS).length
+          sms: notifications.filter(n => n.type === NotificationType.SMS).length,
+          telegram: notifications.filter(n => n.type === 'telegram').length
         },
         by_status: {
           pending: notifications.filter(n => n.status === NotificationStatus.PENDING).length,
@@ -663,6 +677,169 @@ class NotificationService {
     } catch (error) {
       console.error('Error getting notification statistics:', error);
       throw error;
+    }
+  }
+
+  // ========================
+  // GROUP NOTIFICATION METHODS
+  // ========================
+
+  async notifyGroupNewBooking(booking, customer, service) {
+    if (!this.bot || !this.groupSettings.chatId || !this.groupSettings.enabled) {
+      return;
+    }
+
+    try {
+      const dateTime = this.dateTimeUtils.formatDateTime(booking.appointment_datetime);
+      
+      const templateData = {
+        customerName: this.templateProcessor.getDisplayName(customer),
+        serviceName: service.name || 'Lodge Mobile Service',
+        date: dateTime.date,
+        time: dateTime.time
+      };
+
+      const message = this.templateProcessor.processTemplate(
+        this.groupSettings.templates.newBooking,
+        templateData
+      );
+
+      await this.bot.telegram.sendMessage(this.groupSettings.chatId, message, {
+        parse_mode: 'Markdown'
+      });
+
+    } catch (error) {
+      console.error('Failed to send group new booking notification:', error);
+    }
+  }
+
+  async notifyGroupCancellation(booking, customer, service) {
+    if (!this.bot || !this.groupSettings.chatId || !this.groupSettings.enabled) {
+      return;
+    }
+
+    try {
+      const dateTime = this.dateTimeUtils.formatDateTime(booking.appointment_datetime);
+      
+      const templateData = {
+        customerName: this.templateProcessor.getDisplayName(customer),
+        serviceName: service.name || 'Lodge Mobile Service',
+        date: dateTime.date,
+        time: dateTime.time
+      };
+
+      const message = this.templateProcessor.processTemplate(
+        this.groupSettings.templates.cancellation,
+        templateData
+      );
+
+      await this.bot.telegram.sendMessage(this.groupSettings.chatId, message, {
+        parse_mode: 'Markdown'
+      });
+
+    } catch (error) {
+      console.error('Failed to send group cancellation notification:', error);
+    }
+  }
+
+  setGroupChatId(chatId) {
+    this.groupSettings.chatId = chatId;
+  }
+
+  async processRetryQueue() {
+    try {
+      const retryNotifications = await Notification.query()
+        .where('status', NotificationStatus.FAILED)
+        .where('retry_count', '<', this.config.maxRetries)
+        .where('scheduled_for', '<=', new Date())
+        .orderBy('scheduled_for')
+        .limit(this.config.batchSize);
+
+      for (const notification of retryNotifications) {
+        try {
+          await this.sendNotification(notification);
+        } catch (error) {
+          await this.handleNotificationError(notification, error);
+        }
+      }
+
+    } catch (error) {
+      console.error('Error processing retry queue:', error);
+    }
+  }
+
+  async performDailyMaintenance() {
+    try {
+      console.log('🧹 Starting notification service daily maintenance...');
+      
+      // Clean up old notifications
+      await this.cleanupOldNotifications();
+      
+      console.log('✅ Notification service daily maintenance completed');
+      
+    } catch (error) {
+      console.error('Error in notification service daily maintenance:', error);
+    }
+  }
+
+  async sendTelegram(notification) {
+    if (!this.bot) {
+      throw new Error('Telegram bot not configured');
+    }
+
+    const user = await User.query()
+      .select(['id', 'telegram_id', 'first_name', 'last_name'])
+      .where('id', notification.user_id)
+      .first();
+    if (!user || !user.telegram_id) {
+      throw new Error('User has no Telegram ID');
+    }
+
+    const message = notification.subject ? 
+      `*${notification.subject}*\n\n${notification.content}` : 
+      notification.content;
+
+    const options = {
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true
+    };
+
+    const result = await this.bot.telegram.sendMessage(user.telegram_id, message, options);
+    
+    return {
+      success: true,
+      message_id: result.message_id,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Cleanup method for graceful shutdown
+   */
+  async cleanup() {
+    try {
+      logger.info('Cleaning up NotificationService...');
+      
+      // Stop all cron jobs
+      for (const job of this.cronJobs) {
+        try {
+          if (job && typeof job.stop === 'function') {
+            job.stop();
+          }
+        } catch (error) {
+          logger.error('Error stopping cron job:', error);
+        }
+      }
+      
+      // Clear job references
+      this.cronJobs = [];
+      
+      // Set shutdown flag
+      this.isRunning = false;
+      
+      logger.info('NotificationService cleanup completed');
+    } catch (error) {
+      logger.error('Error during NotificationService cleanup:', error);
     }
   }
 }

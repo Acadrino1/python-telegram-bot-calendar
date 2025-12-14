@@ -9,7 +9,7 @@ const bcrypt = require('bcrypt');
 class SecurityPatches {
   constructor() {
     this.vulnerabilities = {
-      exposedBotToken: '8124276494:AAEXy61BMBQcrz6TCCNHRI3_4d6fbXERy8M',
+      exposedBotToken: 'TELEGRAM_BOT_TOKEN_PLACEHOLDER',
       unauthorizedAdminId: '7930798268',
       missingSupport: 'SUPPORT_GROUP_ID not configured',
       weakRateLimit: 'Insufficient rate limiting',

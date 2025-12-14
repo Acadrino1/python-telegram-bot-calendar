@@ -4,10 +4,7 @@ const AvailabilityService = require('../services/AvailabilityService');
 const User = require('../models/User');
 
 class AvailabilityController {
-  /**
-   * Get provider availability for a specific date
-   * GET /api/availability/:providerId/:date
-   */
+
   static async getAvailableSlots(req, res, next) {
     try {
       const { providerId, date } = req.params;
@@ -50,10 +47,6 @@ class AvailabilityController {
     }
   }
 
-  /**
-   * Get provider's availability schedule
-   * GET /api/availability/schedule/:providerId
-   */
   static async getSchedule(req, res, next) {
     try {
       const { providerId } = req.params;
@@ -79,10 +72,6 @@ class AvailabilityController {
     }
   }
 
-  /**
-   * Create or update provider availability schedule
-   * POST /api/availability/schedule
-   */
   static async createOrUpdateSchedule(req, res, next) {
     try {
       // Only providers and admins can manage schedules
@@ -160,10 +149,6 @@ class AvailabilityController {
     }
   }
 
-  /**
-   * Add availability exception (special hours or unavailable)
-   * POST /api/availability/exception
-   */
   static async addException(req, res, next) {
     try {
       // Only providers and admins can add exceptions
@@ -227,10 +212,6 @@ class AvailabilityController {
     }
   }
 
-  /**
-   * Remove availability exception
-   * DELETE /api/availability/exception/:id
-   */
   static async removeException(req, res, next) {
     try {
       const { id } = req.params;
@@ -260,10 +241,6 @@ class AvailabilityController {
     }
   }
 
-  /**
-   * Get provider's availability exceptions
-   * GET /api/availability/exceptions/:providerId
-   */
   static async getExceptions(req, res, next) {
     try {
       const { providerId } = req.params;
@@ -288,10 +265,6 @@ class AvailabilityController {
     }
   }
 
-  /**
-   * Check if specific time slot is available
-   * POST /api/availability/check
-   */
   static async checkAvailability(req, res, next) {
     try {
       const schema = Joi.object({
@@ -325,10 +298,6 @@ class AvailabilityController {
     }
   }
 
-  /**
-   * Get next available slot for a provider and service
-   * GET /api/availability/next/:providerId/:serviceId
-   */
   static async getNextAvailable(req, res, next) {
     try {
       const { providerId, serviceId } = req.params;
@@ -358,10 +327,6 @@ class AvailabilityController {
     }
   }
 
-  /**
-   * Bulk update availability for multiple dates
-   * POST /api/availability/bulk-update
-   */
   static async bulkUpdate(req, res, next) {
     try {
       // Only admins can bulk update

@@ -2,13 +2,10 @@ const Joi = require('joi');
 const WaitlistEntry = require('../models/WaitlistEntry');
 const Service = require('../models/Service');
 const User = require('../models/User');
-const BookingService = require('../services/BookingService');
+const BookingSlotService = require('../services/BookingSlotService');
 
 class WaitlistController {
-  /**
-   * Get waitlist entries
-   * GET /api/waitlist
-   */
+
   static async getAll(req, res, next) {
     try {
       const { providerId, clientId, serviceId, status, page = 1, limit = 20 } = req.query;
@@ -18,24 +15,24 @@ class WaitlistController {
 
       // Apply role-based filtering
       if (req.user.role === 'client') {
-        query = query.where('clientId', req.user.userId);
+        query = query.where('client_id', req.user.userId);
       } else if (req.user.role === 'provider') {
         query = query
           .joinRelated('service')
-          .where('service.providerId', req.user.userId);
+          .where('service.provider_id', req.user.userId);
       }
 
       // Apply additional filters
       if (providerId) {
         query = query
           .joinRelated('service')
-          .where('service.providerId', providerId);
+          .where('service.provider_id', providerId);
       }
       if (clientId) {
-        query = query.where('clientId', clientId);
+        query = query.where('client_id', clientId);
       }
       if (serviceId) {
-        query = query.where('serviceId', serviceId);
+        query = query.where('service_id', serviceId);
       }
       if (status) {
         query = query.where('status', status);
@@ -49,15 +46,15 @@ class WaitlistController {
       const entries = await query
         .withGraphFetched('[client, service.[provider]]')
         .modifyGraph('client', builder => {
-          builder.select('id', 'firstName', 'lastName', 'email', 'phone');
+          builder.select('id', 'first_name', 'last_name', 'email', 'phone');
         })
         .modifyGraph('service.provider', builder => {
-          builder.select('id', 'firstName', 'lastName', 'email');
+          builder.select('id', 'first_name', 'last_name', 'email');
         })
         .limit(limit)
         .offset(offset)
         .orderBy('position', 'asc')
-        .orderBy('createdAt', 'asc');
+        .orderBy('created_at', 'asc');
 
       res.json({
         entries,
@@ -73,20 +70,16 @@ class WaitlistController {
     }
   }
 
-  /**
-   * Get waitlist entry by ID
-   * GET /api/waitlist/:id
-   */
   static async getById(req, res, next) {
     try {
       const entry = await WaitlistEntry.query()
         .findById(req.params.id)
         .withGraphFetched('[client, service.[provider]]')
         .modifyGraph('client', builder => {
-          builder.select('id', 'firstName', 'lastName', 'email', 'phone');
+          builder.select('id', 'first_name', 'last_name', 'email', 'phone');
         })
         .modifyGraph('service.provider', builder => {
-          builder.select('id', 'firstName', 'lastName', 'email');
+          builder.select('id', 'first_name', 'last_name', 'email');
         });
 
       if (!entry) {
@@ -96,14 +89,14 @@ class WaitlistController {
       }
 
       // Check access permissions
-      if (req.user.role === 'client' && entry.clientId !== req.user.userId) {
-        return res.status(403).json({ 
-          error: 'Access denied' 
+      if (req.user.role === 'client' && entry.client_id !== req.user.userId) {
+        return res.status(403).json({
+          error: 'Access denied'
         });
       }
-      if (req.user.role === 'provider' && entry.service.providerId !== req.user.userId) {
-        return res.status(403).json({ 
-          error: 'Access denied' 
+      if (req.user.role === 'provider' && entry.service.provider_id !== req.user.userId) {
+        return res.status(403).json({
+          error: 'Access denied'
         });
       }
 
@@ -113,10 +106,6 @@ class WaitlistController {
     }
   }
 
-  /**
-   * Join waitlist
-   * POST /api/waitlist
-   */
   static async join(req, res, next) {
     try {
       const schema = Joi.object({
@@ -151,9 +140,9 @@ class WaitlistController {
         });
       }
 
-      if (!service.isActive) {
-        return res.status(400).json({ 
-          error: 'Service is not available' 
+      if (!service.is_active) {
+        return res.status(400).json({
+          error: 'Service is not available'
         });
       }
 
@@ -166,8 +155,8 @@ class WaitlistController {
 
       // Check for existing waitlist entry
       const existingEntry = await WaitlistEntry.query()
-        .where('clientId', req.user.userId)
-        .where('serviceId', value.serviceId)
+        .where('client_id', req.user.userId)
+        .where('service_id', value.serviceId)
         .where('status', 'active')
         .first();
 
@@ -179,7 +168,7 @@ class WaitlistController {
 
       // Get current position in waitlist
       const lastEntry = await WaitlistEntry.query()
-        .where('serviceId', value.serviceId)
+        .where('service_id', value.serviceId)
         .where('status', 'active')
         .orderBy('position', 'desc')
         .first();
@@ -188,14 +177,14 @@ class WaitlistController {
 
       // Create waitlist entry
       const entry = await WaitlistEntry.query().insert({
-        clientId: req.user.userId,
-        serviceId: value.serviceId,
+        client_id: req.user.userId,
+        service_id: value.serviceId,
         position,
-        preferredDates: value.preferredDates,
-        preferredTimes: value.preferredTimes,
+        preferred_dates: value.preferredDates,
+        preferred_times: value.preferredTimes,
         notes: value.notes,
         status: 'active',
-        notificationPreferences: {
+        notification_preferences: {
           email: value.notifyByEmail,
           sms: value.notifyBySms
         }
@@ -208,7 +197,7 @@ class WaitlistController {
         message: 'Successfully joined the waitlist',
         entry: {
           ...entry,
-          estimatedWaitTime: await this.estimateWaitTime(value.serviceId, position)
+          estimatedWaitTime: await WaitlistController.estimateWaitTime(value.serviceId, position)
         }
       });
     } catch (error) {
@@ -216,10 +205,6 @@ class WaitlistController {
     }
   }
 
-  /**
-   * Update waitlist preferences
-   * PUT /api/waitlist/:id
-   */
   static async update(req, res, next) {
     try {
       const entryId = req.params.id;
@@ -236,14 +221,14 @@ class WaitlistController {
       }
 
       // Check permissions
-      if (req.user.role === 'client' && entry.clientId !== req.user.userId) {
-        return res.status(403).json({ 
-          error: 'Access denied' 
+      if (req.user.role === 'client' && entry.client_id !== req.user.userId) {
+        return res.status(403).json({
+          error: 'Access denied'
         });
       }
-      if (req.user.role === 'provider' && entry.service.providerId !== req.user.userId) {
-        return res.status(403).json({ 
-          error: 'Access denied' 
+      if (req.user.role === 'provider' && entry.service.provider_id !== req.user.userId) {
+        return res.status(403).json({
+          error: 'Access denied'
         });
       }
 
@@ -272,18 +257,18 @@ class WaitlistController {
 
       // Prepare update data
       const updateData = {
-        updatedAt: new Date()
+        updated_at: new Date()
       };
 
-      if (value.preferredDates) updateData.preferredDates = value.preferredDates;
-      if (value.preferredTimes) updateData.preferredTimes = value.preferredTimes;
+      if (value.preferredDates) updateData.preferred_dates = value.preferredDates;
+      if (value.preferredTimes) updateData.preferred_times = value.preferredTimes;
       if (value.notes !== undefined) updateData.notes = value.notes;
       if (value.status) updateData.status = value.status;
 
       if (value.notifyByEmail !== undefined || value.notifyBySms !== undefined) {
-        updateData.notificationPreferences = {
-          email: value.notifyByEmail ?? entry.notificationPreferences?.email,
-          sms: value.notifyBySms ?? entry.notificationPreferences?.sms
+        updateData.notification_preferences = {
+          email: value.notifyByEmail ?? entry.notification_preferences?.email,
+          sms: value.notifyBySms ?? entry.notification_preferences?.sms
         };
       }
 
@@ -301,10 +286,6 @@ class WaitlistController {
     }
   }
 
-  /**
-   * Leave waitlist
-   * DELETE /api/waitlist/:id
-   */
   static async leave(req, res, next) {
     try {
       const entryId = req.params.id;
@@ -321,9 +302,9 @@ class WaitlistController {
       }
 
       // Check permissions
-      if (req.user.role === 'client' && entry.clientId !== req.user.userId) {
-        return res.status(403).json({ 
-          error: 'Access denied' 
+      if (req.user.role === 'client' && entry.client_id !== req.user.userId) {
+        return res.status(403).json({
+          error: 'Access denied'
         });
       }
 
@@ -332,12 +313,12 @@ class WaitlistController {
         .findById(entryId)
         .patch({
           status: 'cancelled',
-          updatedAt: new Date()
+          updated_at: new Date()
         });
 
       // Update positions for remaining entries
       await WaitlistEntry.query()
-        .where('serviceId', entry.serviceId)
+        .where('service_id', entry.service_id)
         .where('position', '>', entry.position)
         .where('status', 'active')
         .decrement('position', 1);
@@ -350,10 +331,6 @@ class WaitlistController {
     }
   }
 
-  /**
-   * Get waitlist position
-   * GET /api/waitlist/:id/position
-   */
   static async getPosition(req, res, next) {
     try {
       const entry = await WaitlistEntry.query()
@@ -367,15 +344,15 @@ class WaitlistController {
       }
 
       // Check permissions
-      if (req.user.role === 'client' && entry.clientId !== req.user.userId) {
-        return res.status(403).json({ 
-          error: 'Access denied' 
+      if (req.user.role === 'client' && entry.client_id !== req.user.userId) {
+        return res.status(403).json({
+          error: 'Access denied'
         });
       }
 
       // Get current position (in case it changed)
       const activeEntriesBefore = await WaitlistEntry.query()
-        .where('serviceId', entry.serviceId)
+        .where('service_id', entry.service_id)
         .where('status', 'active')
         .where('position', '<', entry.position)
         .count('id as count')
@@ -385,7 +362,7 @@ class WaitlistController {
 
       // Get total active entries
       const totalActive = await WaitlistEntry.query()
-        .where('serviceId', entry.serviceId)
+        .where('service_id', entry.service_id)
         .where('status', 'active')
         .count('id as count')
         .first();
@@ -394,7 +371,7 @@ class WaitlistController {
         entryId: entry.id,
         currentPosition,
         totalInWaitlist: totalActive?.count || 0,
-        estimatedWaitTime: await this.estimateWaitTime(entry.serviceId, currentPosition),
+        estimatedWaitTime: await WaitlistController.estimateWaitTime(entry.service_id, currentPosition),
         status: entry.status
       });
     } catch (error) {
@@ -402,10 +379,6 @@ class WaitlistController {
     }
   }
 
-  /**
-   * Process waitlist (provider/admin only)
-   * POST /api/waitlist/process
-   */
   static async processWaitlist(req, res, next) {
     try {
       // Only providers and admins can process waitlist
@@ -437,9 +410,9 @@ class WaitlistController {
         });
       }
 
-      if (req.user.role === 'provider' && service.providerId !== req.user.userId) {
-        return res.status(403).json({ 
-          error: 'Access denied to this service' 
+      if (req.user.role === 'provider' && service.provider_id !== req.user.userId) {
+        return res.status(403).json({
+          error: 'Access denied to this service'
         });
       }
 
@@ -453,10 +426,10 @@ class WaitlistController {
       else if (slotHour >= 17) timePreference = 'evening';
 
       const eligibleEntries = await WaitlistEntry.query()
-        .where('serviceId', value.serviceId)
+        .where('service_id', value.serviceId)
         .where('status', 'active')
-        .whereRaw('JSON_CONTAINS(preferredDates, ?)', [JSON.stringify(slotDateOnly)])
-        .whereRaw(`JSON_EXTRACT(preferredTimes, '$.${timePreference}') = true`)
+        .whereRaw('JSON_CONTAINS(preferred_dates, ?)', [JSON.stringify(slotDateOnly)])
+        .whereRaw(`JSON_EXTRACT(preferred_times, '$.${timePreference}') = true`)
         .orderBy('position', 'asc')
         .limit(value.maxContacts)
         .withGraphFetched('[client]');
@@ -469,9 +442,9 @@ class WaitlistController {
           .findById(entry.id)
           .patch({
             status: 'contacted',
-            contactedAt: new Date(),
-            offeredSlot: value.availableSlot,
-            updatedAt: new Date()
+            contacted_at: new Date(),
+            offered_slot: value.availableSlot,
+            updated_at: new Date()
           });
 
         // Send notification (in production, would actually send email/SMS)
@@ -479,7 +452,7 @@ class WaitlistController {
 
         contacted.push({
           entryId: entry.id,
-          client: `${entry.client.firstName} ${entry.client.lastName}`,
+          client: `${entry.client.first_name} ${entry.client.last_name}`,
           email: entry.client.email
         });
       }
@@ -494,10 +467,6 @@ class WaitlistController {
     }
   }
 
-  /**
-   * Get waitlist statistics (provider/admin only)
-   * GET /api/waitlist/stats
-   */
   static async getStatistics(req, res, next) {
     try {
       // Only providers and admins can view statistics
@@ -521,18 +490,18 @@ class WaitlistController {
         }
 
         // Check ownership for providers
-        if (req.user.role === 'provider' && service.providerId !== req.user.userId) {
-          return res.status(403).json({ 
-            error: 'Access denied to this service' 
+        if (req.user.role === 'provider' && service.provider_id !== req.user.userId) {
+          return res.status(403).json({
+            error: 'Access denied to this service'
           });
         }
 
-        query = query.where('serviceId', serviceId);
+        query = query.where('service_id', serviceId);
       } else if (req.user.role === 'provider') {
         // Filter by provider's services
         query = query
           .joinRelated('service')
-          .where('service.providerId', req.user.userId);
+          .where('service.provider_id', req.user.userId);
       }
 
       // Get statistics by status
@@ -544,8 +513,8 @@ class WaitlistController {
       // Get average wait time for booked entries
       const avgWaitTime = await query.clone()
         .where('status', 'booked')
-        .whereNotNull('contactedAt')
-        .avg(WaitlistEntry.raw('TIMESTAMPDIFF(HOUR, createdAt, contactedAt) as avgHours'))
+        .whereNotNull('contacted_at')
+        .avg(WaitlistEntry.raw('TIMESTAMPDIFF(HOUR, created_at, contacted_at) as avgHours'))
         .first();
 
       // Get conversion rate
@@ -574,9 +543,6 @@ class WaitlistController {
     }
   }
 
-  /**
-   * Helper: Estimate wait time based on position
-   */
   static async estimateWaitTime(serviceId, position) {
     // Get average appointments per week for this service
     const lastMonth = new Date();
@@ -585,7 +551,7 @@ class WaitlistController {
     const appointmentsLastMonth = await Service.query()
       .findById(serviceId)
       .$relatedQuery('appointments')
-      .where('createdAt', '>', lastMonth)
+      .where('created_at', '>', lastMonth)
       .where('status', 'completed')
       .count('* as count')
       .first();

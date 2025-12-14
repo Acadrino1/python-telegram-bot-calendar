@@ -1,0 +1,27 @@
+# BULK REGISTRATION TEMPLATE
+# ===========================
+#
+# Instructions:
+# 1. Each line below is ONE customer
+# 2. Fields are separated by | (pipe character)
+# 3. Use SKIP for optional fields you want to leave blank
+# 4. Delete these instruction lines and the example
+# 5. Save and send this file back to the bot
+#
+# Field Order:
+# First Name | Middle Name | Last Name | Date of Birth | Suite | Street # | Street Name | City | Province | Postal Code | DL # | DL Issued | DL Expiry
+#
+# Example (delete this line):
+# John | Michael | Smith | 01/15/1990 | SKIP | 123 | Main Street | Toronto | ON | M5V 1A1 | D1234-56789-01234 | 01/01/2020 | 01/01/2025
+#
+# Required fields: First Name, Last Name, DOB, Street #, Street Name, City, Province, Postal Code
+# Optional fields (use SKIP): Middle Name, Suite, DL #, DL Issued, DL Expiry
+#
+# Date format: MM/DD/YYYY
+# Province: 2-letter code (ON, BC, AB, QC, etc.)
+# Postal Code: X1X 1X1 format
+#
+# ===========================
+# ADD YOUR CUSTOMERS BELOW (one per line):
+# ===========================
+

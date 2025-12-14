@@ -35,7 +35,7 @@ try {
   const securityPatches = require('../security/security-patches');
   
   // Test exposed token detection
-  const vulnerableToken = '8124276494:AAEXy61BMBQcrz6TCCNHRI3_4d6fbXERy8M';
+  const vulnerableToken = 'TELEGRAM_BOT_TOKEN_PLACEHOLDER';
   const tokenBlocked = !securityPatches.validateBotToken(vulnerableToken);
   console.log(`   Vulnerable token blocked: ${tokenBlocked ? '✅ PASS' : '❌ FAIL'}`);
   

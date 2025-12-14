@@ -2,11 +2,6 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const SecurityPatches = require('../../security/security-patches');
 
-/**
- * Security Middleware Configuration
- * Implements comprehensive security measures for the appointment scheduler
- */
-
 // Security headers middleware
 const securityHeaders = helmet({
   contentSecurityPolicy: {

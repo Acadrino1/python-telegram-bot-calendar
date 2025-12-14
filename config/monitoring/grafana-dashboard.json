@@ -1,0 +1,220 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Lodge Scheduler - Production Monitoring",
+    "tags": ["lodge-scheduler", "telegram-bot", "production"],
+    "style": "dark",
+    "timezone": "browser",
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "System Overview",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "system_health_score{component=\"overall\"}",
+            "legendFormat": "System Health"
+          },
+          {
+            "expr": "up",
+            "legendFormat": "Uptime"
+          },
+          {
+            "expr": "rate(http_request_duration_seconds_count[5m])",
+            "legendFormat": "Request Rate"
+          }
+        ],
+        "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 }
+      },
+      {
+        "id": 2,
+        "title": "Telegram Bot Performance",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(telegram_bot_requests_total[5m])",
+            "legendFormat": "Bot Requests/sec - {{command}}"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(callback_query_latency_seconds_bucket[5m]))",
+            "legendFormat": "95th Percentile Latency"
+          }
+        ],
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+        "yAxes": [
+          {
+            "label": "Requests/sec",
+            "min": 0
+          },
+          {
+            "label": "Latency (seconds)",
+            "min": 0
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Appointment Bookings",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "increase(appointment_bookings_total[1h])",
+            "legendFormat": "Bookings/hour - {{service}}"
+          }
+        ],
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+        "yAxes": [
+          {
+            "label": "Bookings",
+            "min": 0
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Database Performance",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(database_query_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th Percentile - {{operation}}"
+          },
+          {
+            "expr": "rate(database_query_duration_seconds_count[5m])",
+            "legendFormat": "Queries/sec - {{table}}"
+          }
+        ],
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+        "yAxes": [
+          {
+            "label": "Duration (seconds)",
+            "min": 0
+          },
+          {
+            "label": "Queries/sec",
+            "min": 0
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Redis Performance",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(redis_operation_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th Percentile - {{operation}}"
+          },
+          {
+            "expr": "rate(redis_operation_duration_seconds_count[5m])",
+            "legendFormat": "Operations/sec - {{operation}}"
+          }
+        ],
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+        "yAxes": [
+          {
+            "label": "Duration (seconds)",
+            "min": 0
+          },
+          {
+            "label": "Operations/sec",
+            "min": 0
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Memory Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "nodejs_memory_usage_bytes{type=\"heapUsed\"} / 1024 / 1024",
+            "legendFormat": "Heap Used (MB)"
+          },
+          {
+            "expr": "nodejs_memory_usage_bytes{type=\"heapTotal\"} / 1024 / 1024",
+            "legendFormat": "Heap Total (MB)"
+          }
+        ],
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+        "yAxes": [
+          {
+            "label": "Memory (MB)",
+            "min": 0
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Active Users",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "active_users{timeframe=\"1h\"}",
+            "legendFormat": "Last Hour"
+          },
+          {
+            "expr": "active_users{timeframe=\"24h\"}",
+            "legendFormat": "Last 24h"
+          }
+        ],
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 }
+      },
+      {
+        "id": 8,
+        "title": "Notification Delivery",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(notifications_sent_total{status=\"success\"}[5m])",
+            "legendFormat": "Successful - {{channel}}"
+          },
+          {
+            "expr": "rate(notifications_sent_total{status=\"failed\"}[5m])",
+            "legendFormat": "Failed - {{channel}}"
+          }
+        ],
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 30 },
+        "yAxes": [
+          {
+            "label": "Notifications/sec",
+            "min": 0
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "HTTP Response Times",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "50th Percentile"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th Percentile"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "99th Percentile"
+          }
+        ],
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 30 },
+        "yAxes": [
+          {
+            "label": "Response Time (seconds)",
+            "min": 0
+          }
+        ]
+      }
+    ],
+    "schemaVersion": 27,
+    "version": 1
+  }
+}

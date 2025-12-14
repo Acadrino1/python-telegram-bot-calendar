@@ -1,4 +1,14 @@
-const winston = require('winston');
+// Graceful fallback for winston dependency
+let winston;
+try {
+  winston = require('winston');
+} catch (error) {
+  console.warn('⚠️  Winston not available, using simple logger fallback');
+  // Use simple logger fallback
+  const simpleLogger = require('./simple-logger');
+  module.exports = simpleLogger;
+  // Early return after setting module.exports
+}
 const path = require('path');
 
 // Create logs directory if it doesn't exist
@@ -116,6 +126,15 @@ logger.logWaitlistAction = (action, waitlistId, clientId, details = {}) => {
     action,
     waitlistId,
     clientId,
+    details,
+    timestamp: new Date().toISOString()
+  });
+};
+
+// Admin audit logging method
+logger.auditLog = (action, details = {}) => {
+  logger.info('Admin audit log', {
+    action,
     details,
     timestamp: new Date().toISOString()
   });

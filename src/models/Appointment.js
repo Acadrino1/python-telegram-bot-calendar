@@ -8,6 +8,20 @@ class Appointment extends Model {
     return 'appointments';
   }
 
+  // Status constants for easy access
+  static get statuses() {
+    return {
+      PENDING_APPROVAL: 'pending_approval',
+      SCHEDULED: 'scheduled',
+      CONFIRMED: 'confirmed',
+      IN_PROGRESS: 'in_progress',
+      COMPLETED: 'completed',
+      CANCELLED: 'cancelled',
+      REJECTED: 'rejected',
+      NO_SHOW: 'no_show'
+    };
+  }
+
   static get jsonSchema() {
     return {
       type: 'object',
@@ -265,13 +279,13 @@ class Appointment extends Model {
           this.where('appointment_datetime', '>=', startTime)
               .where('appointment_datetime', '<', endTime);
         }).orWhere(function() {
-          // Appointment ends during the proposed time
-          this.whereRaw('DATE_ADD(appointment_datetime, INTERVAL duration_minutes MINUTE) > ?', [startTime])
-              .whereRaw('DATE_ADD(appointment_datetime, INTERVAL duration_minutes MINUTE) <= ?', [endTime]);
+          // Appointment ends during the proposed time (SQLite compatible)
+          this.whereRaw("datetime(appointment_datetime, '+' || duration_minutes || ' minutes') > ?", [startTime])
+              .whereRaw("datetime(appointment_datetime, '+' || duration_minutes || ' minutes') <= ?", [endTime]);
         }).orWhere(function() {
-          // Appointment surrounds the proposed time
+          // Appointment surrounds the proposed time (SQLite compatible)
           this.where('appointment_datetime', '<=', startTime)
-              .whereRaw('DATE_ADD(appointment_datetime, INTERVAL duration_minutes MINUTE) >= ?', [endTime]);
+              .whereRaw("datetime(appointment_datetime, '+' || duration_minutes || ' minutes') >= ?", [endTime]);
         });
       });
 
@@ -283,14 +297,20 @@ class Appointment extends Model {
   }
 
   static async findUpcomingReminders(reminderHours = 24) {
+    // Security: validate reminderHours is a safe integer
+    const safeHours = parseInt(reminderHours, 10);
+    if (isNaN(safeHours) || safeHours < 1 || safeHours > 168) {
+      throw new Error('Invalid reminderHours value');
+    }
+
     const now = moment().toISOString();
-    const reminderTime = moment().add(reminderHours, 'hours').toISOString();
+    const reminderTime = moment().add(safeHours, 'hours').toISOString();
 
     return this.query()
       .where('status', 'in', [AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED])
       .where('appointment_datetime', '>', now)
       .where('appointment_datetime', '<=', reminderTime)
-      .whereRaw(`JSON_EXTRACT(reminder_sent, '$.${reminderHours}h') IS NULL`)
+      .whereRaw(`JSON_EXTRACT(reminder_sent, '$.${safeHours}h') IS NULL`)
       .withGraphFetched('[client, provider, service]');
   }
 
@@ -299,7 +319,7 @@ class Appointment extends Model {
 
     return this.query()
       .where('status', 'in', [AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS])
-      .whereRaw('DATE_ADD(appointment_datetime, INTERVAL duration_minutes MINUTE) < ?', [now]);
+      .whereRaw("datetime(appointment_datetime, '+' || duration_minutes || ' minutes') < ?", [now]);
   }
 
   // Get appointments for a specific date range

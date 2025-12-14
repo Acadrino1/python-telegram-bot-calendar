@@ -4,10 +4,7 @@ const Joi = require('joi');
 const User = require('../models/User');
 
 class AuthController {
-  /**
-   * Register a new user
-   * POST /api/auth/register
-   */
+
   static async register(req, res, next) {
     try {
       // Validation schema
@@ -86,10 +83,6 @@ class AuthController {
     }
   }
 
-  /**
-   * Login user
-   * POST /api/auth/login
-   */
   static async login(req, res, next) {
     try {
       // Validation schema
@@ -118,9 +111,9 @@ class AuthController {
       }
 
       // Check if user is active
-      if (!user.isActive) {
-        return res.status(403).json({ 
-          error: 'Account is deactivated. Please contact support.' 
+      if (!user.is_active) {
+        return res.status(403).json({
+          error: 'Account is deactivated. Please contact support.'
         });
       }
 
@@ -135,7 +128,7 @@ class AuthController {
       // Update last login
       await User.query()
         .findById(user.id)
-        .patch({ lastLoginAt: new Date() });
+        .patch({ updated_at: new Date() });
 
       // Generate JWT token
       const token = jwt.sign(
@@ -161,10 +154,6 @@ class AuthController {
     }
   }
 
-  /**
-   * Logout user (optional - mainly for token blacklisting if implemented)
-   * POST /api/auth/logout
-   */
   static async logout(req, res, next) {
     try {
       // In a production environment, you might want to:
@@ -180,17 +169,13 @@ class AuthController {
     }
   }
 
-  /**
-   * Get current user profile
-   * GET /api/auth/me
-   */
   static async getProfile(req, res, next) {
     try {
       const user = await User.query()
         .findById(req.user.userId)
-        .select('id', 'email', 'firstName', 'lastName', 'phone', 'role', 
-                'timezone', 'preferences', 'isActive', 'emailVerified', 
-                'createdAt', 'lastLoginAt');
+        .select('id', 'email', 'first_name', 'last_name', 'phone', 'role',
+                'timezone', 'preferences', 'is_active', 'email_verified',
+                'created_at', 'updated_at');
 
       if (!user) {
         return res.status(404).json({ 
@@ -204,10 +189,6 @@ class AuthController {
     }
   }
 
-  /**
-   * Update current user profile
-   * PUT /api/auth/me
-   */
   static async updateProfile(req, res, next) {
     try {
       const schema = Joi.object({
@@ -232,11 +213,15 @@ class AuthController {
 
       const user = await User.query()
         .patchAndFetchById(req.user.userId, {
-          ...value,
-          updatedAt: new Date()
+          first_name: value.firstName,
+          last_name: value.lastName,
+          phone: value.phone,
+          timezone: value.timezone,
+          preferences: value.preferences,
+          updated_at: new Date()
         })
-        .select('id', 'email', 'firstName', 'lastName', 'phone', 'role', 
-                'timezone', 'preferences', 'isActive', 'emailVerified');
+        .select('id', 'email', 'first_name', 'last_name', 'phone', 'role',
+                'timezone', 'preferences', 'is_active', 'email_verified');
 
       res.json({
         message: 'Profile updated successfully',
@@ -247,10 +232,6 @@ class AuthController {
     }
   }
 
-  /**
-   * Change password
-   * POST /api/auth/change-password
-   */
   static async changePassword(req, res, next) {
     try {
       const schema = Joi.object({
@@ -271,10 +252,10 @@ class AuthController {
         .findById(req.user.userId);
 
       // Verify current password
-      const isValidPassword = await bcrypt.compare(value.currentPassword, user.password);
+      const isValidPassword = await bcrypt.compare(value.currentPassword, user.password_hash);
       if (!isValidPassword) {
-        return res.status(401).json({ 
-          error: 'Current password is incorrect' 
+        return res.status(401).json({
+          error: 'Current password is incorrect'
         });
       }
 
@@ -284,9 +265,9 @@ class AuthController {
       // Update password
       await User.query()
         .findById(req.user.userId)
-        .patch({ 
-          password: hashedPassword,
-          updatedAt: new Date()
+        .patch({
+          password_hash: hashedPassword,
+          updated_at: new Date()
         });
 
       res.json({
@@ -297,10 +278,6 @@ class AuthController {
     }
   }
 
-  /**
-   * Request password reset
-   * POST /api/auth/forgot-password
-   */
   static async forgotPassword(req, res, next) {
     try {
       const schema = Joi.object({
@@ -348,10 +325,6 @@ class AuthController {
     }
   }
 
-  /**
-   * Reset password with token
-   * POST /api/auth/reset-password
-   */
   static async resetPassword(req, res, next) {
     try {
       const schema = Joi.object({
@@ -386,9 +359,9 @@ class AuthController {
       // Update password
       await User.query()
         .findById(decoded.userId)
-        .patch({ 
-          password: hashedPassword,
-          updatedAt: new Date()
+        .patch({
+          password_hash: hashedPassword,
+          updated_at: new Date()
         });
 
       res.json({

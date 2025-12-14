@@ -1,39 +1,67 @@
 const rateLimit = require('express-rate-limit');
-const RedisStore = require('rate-limit-redis');
-const Redis = require('redis');
+// const { RedisStore } = require('rate-limit-redis'); // Optional Redis store disabled for core functionality
+// const { createClient } = require('redis');
 
 /**
  * Enhanced Rate Limiting Middleware
  * Provides comprehensive protection against abuse and DDoS attacks
  */
 
+// Redis disabled for core functionality - using in-memory store only
 // Initialize Redis client for distributed rate limiting (optional)
 let redisClient = null;
-if (process.env.REDIS_HOST) {
-  redisClient = Redis.createClient({
-    host: process.env.REDIS_HOST,
-    port: process.env.REDIS_PORT || 6379,
-    password: process.env.REDIS_PASSWORD || undefined
-  });
-  
-  redisClient.on('error', (err) => {
-    console.error('Redis rate limiting error:', err);
-  });
-}
+let redisAvailable = false;
+
+// Redis initialization disabled for core functionality
+// async function initializeRedis() {
+//   if (process.env.REDIS_HOST) {
+//     try {
+//       redisClient = createClient({
+//         socket: {
+//           host: process.env.REDIS_HOST,
+//           port: process.env.REDIS_PORT || 6379
+//         },
+//         password: process.env.REDIS_PASSWORD || undefined
+//       });
+//       
+//       redisClient.on('error', (err) => {
+//         console.error('Redis rate limiting error:', err);
+//         redisAvailable = false;
+//       });
+//       
+//       redisClient.on('connect', () => {
+//         console.log('Redis connected for rate limiting');
+//         redisAvailable = true;
+//       });
+//       
+//       // Connect to Redis client
+//       await redisClient.connect();
+//       redisAvailable = true;
+//     } catch (error) {
+//       console.warn('Redis not available for rate limiting, using memory store:', error.message);
+//       redisClient = null;
+//       redisAvailable = false;
+//     }
+//   }
+// }
+
+// Redis initialization disabled for core functionality
+// initializeRedis();
 
 // General API rate limiting
 const generalApiLimiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+  limit: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // Updated from 'max' to 'limit'
   message: {
     error: 'Too many requests from this IP, please try again later.',
     retryAfter: Math.ceil((parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000) / 1000)
   },
   standardHeaders: true,
   legacyHeaders: false,
-  store: redisClient ? new RedisStore({
-    sendCommand: (...args) => redisClient.call(...args),
-  }) : undefined,
+  // Redis store disabled for core functionality
+  // store: (redisClient && redisAvailable) ? new RedisStore({
+  //   client: redisClient,
+  // }) : undefined,
   keyGenerator: (req) => {
     // Use IP + user ID if authenticated, otherwise just IP
     const ip = req.ip || req.connection.remoteAddress;
@@ -52,16 +80,17 @@ const generalApiLimiter = rateLimit({
 // Strict rate limiting for authentication endpoints
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Very strict for auth attempts
+  limit: 10, // Updated from 'max' to 'limit', increased from 5 to 10 for development
   message: {
     error: 'Too many authentication attempts from this IP',
     retryAfter: 900 // 15 minutes
   },
   standardHeaders: true,
   legacyHeaders: false,
-  store: redisClient ? new RedisStore({
-    sendCommand: (...args) => redisClient.call(...args),
-  }) : undefined,
+  // Redis store disabled for core functionality
+  // store: (redisClient && redisAvailable) ? new RedisStore({
+  //   client: redisClient,
+  // }) : undefined,
   keyGenerator: (req) => {
     const ip = req.ip || req.connection.remoteAddress;
     return `rate_limit:auth:${ip}`;
@@ -79,16 +108,17 @@ const authLimiter = rateLimit({
 // Booking endpoint rate limiting
 const bookingLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 10, // Max 10 bookings per hour per user
+  limit: 10, // Updated from 'max' to 'limit'
   message: {
     error: 'Booking rate limit exceeded',
     retryAfter: 3600
   },
   standardHeaders: true,
   legacyHeaders: false,
-  store: redisClient ? new RedisStore({
-    sendCommand: (...args) => redisClient.call(...args),
-  }) : undefined,
+  // Redis store disabled for core functionality
+  // store: (redisClient && redisAvailable) ? new RedisStore({
+  //   client: redisClient,
+  // }) : undefined,
   keyGenerator: (req) => {
     const ip = req.ip || req.connection.remoteAddress;
     const userId = req.user?.id || 'anonymous';
@@ -107,15 +137,16 @@ const bookingLimiter = rateLimit({
 // Telegram webhook rate limiting
 const telegramWebhookLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
-  max: 30, // Telegram bots can receive up to 30 messages per second
+  limit: 30, // Updated from 'max' to 'limit'
   message: {
     error: 'Webhook rate limit exceeded'
   },
   standardHeaders: true,
   legacyHeaders: false,
-  store: redisClient ? new RedisStore({
-    sendCommand: (...args) => redisClient.call(...args),
-  }) : undefined,
+  // Redis store disabled for core functionality
+  // store: (redisClient && redisAvailable) ? new RedisStore({
+  //   client: redisClient,
+  // }) : undefined,
   keyGenerator: (req) => {
     // Use Telegram's IP or the webhook path
     const ip = req.ip || req.connection.remoteAddress;
@@ -132,16 +163,17 @@ const telegramWebhookLimiter = rateLimit({
 // API key rate limiting (for authenticated API access)
 const apiKeyLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // Higher limit for authenticated API access
+  limit: 1000, // Updated from 'max' to 'limit'
   message: {
     error: 'API rate limit exceeded',
     retryAfter: 900
   },
   standardHeaders: true,
   legacyHeaders: false,
-  store: redisClient ? new RedisStore({
-    sendCommand: (...args) => redisClient.call(...args),
-  }) : undefined,
+  // Redis store disabled for core functionality
+  // store: (redisClient && redisAvailable) ? new RedisStore({
+  //   client: redisClient,
+  // }) : undefined,
   keyGenerator: (req) => {
     const apiKey = req.headers['x-api-key'] || 'no-key';
     const ip = req.ip || req.connection.remoteAddress;
@@ -158,18 +190,19 @@ const apiKeyLimiter = rateLimit({
 });
 
 // Progressive rate limiting based on request count
-const createProgressiveLimiter = (baseMax, multiplier = 0.5) => {
+const createProgressiveLimiter = (baseLimit, multiplier = 0.5) => {
   return rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: (req) => {
+    limit: (req) => {
       // Progressive limiting: reduce allowed requests based on recent activity
       const recentRequests = req.rateLimit?.current || 0;
-      const adjustedMax = Math.max(1, Math.floor(baseMax * (1 - recentRequests * multiplier / baseMax)));
-      return adjustedMax;
+      const adjustedLimit = Math.max(1, Math.floor(baseLimit * (1 - recentRequests * multiplier / baseLimit)));
+      return adjustedLimit;
     },
-    store: redisClient ? new RedisStore({
-      sendCommand: (...args) => redisClient.call(...args),
-    }) : undefined,
+    // Redis store disabled for core functionality
+    // store: redisClient ? new RedisStore({
+    //   sendCommand: (...args) => redisClient.call(...args),
+    // }) : undefined,
     keyGenerator: (req) => {
       const ip = req.ip || req.connection.remoteAddress;
       const userId = req.user?.id || 'anonymous';

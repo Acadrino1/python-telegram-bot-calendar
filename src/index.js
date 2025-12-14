@@ -6,6 +6,43 @@ const { Model } = require('objection');
 const Knex = require('knex');
 require('dotenv').config();
 
+// Initialize feature toggle system (graceful fallback)
+let features, featureManager, validator;
+try {
+  const configModule = require('../config/features');
+  features = configModule.features;
+  featureManager = configModule.manager;
+} catch (error) {
+  console.warn('⚠️  Feature toggle system not available, using defaults');
+  // Fallback feature system
+  features = {
+    isApiServerEnabled: () => true,
+    isDatabaseEnabled: () => true,
+    isAuthEnabled: () => true,
+    areAppointmentsEnabled: () => true,
+    isAvailabilityEnabled: () => true,
+    isWaitlistEnabled: () => true,
+    isDataRetentionEnabled: () => false,
+    isBroadcastSystemEnabled: () => false,
+    isRateLimitingEnabled: () => true,
+    isInputValidationEnabled: () => true,
+    isAuditLoggingEnabled: () => false
+  };
+  featureManager = {
+    getEnabledFeatures: () => ['core.api_server', 'core.database', 'core.authentication']
+  };
+}
+
+try {
+  const validatorModule = require('../config/startup-validator');
+  validator = validatorModule.validator;
+} catch (error) {
+  console.warn('⚠️  Startup validator not available, skipping validation');
+  validator = {
+    validate: () => Promise.resolve({ valid: true, validation: { errors: [] } })
+  };
+}
+
 // Import security middleware
 const { 
   securityHeaders, 
@@ -25,50 +62,157 @@ const serviceRoutes = require('./routes/services');
 const userRoutes = require('./routes/users');
 const waitlistRoutes = require('./routes/waitlist');
 const notificationRoutes = require('./routes/notifications');
+// Import data retention routes if available
+let dataRetentionRoutes;
+try {
+  dataRetentionRoutes = require('./routes/dataRetention');
+} catch (error) {
+  console.warn('⚠️  Data retention routes not available');
+}
+
+// Import payments routes
+const paymentRoutes = require('./routes/payments');
 
 // Import middleware
-const authMiddleware = require('./middleware/auth');
-const errorHandler = require('./middleware/errorHandler');
-const logger = require('./utils/logger');
+// Import middleware with graceful fallback
+let authMiddleware, errorHandler, logger;
+try {
+  authMiddleware = require('./middleware/auth');
+} catch (error) {
+  console.warn('⚠️  Auth middleware not available');
+  authMiddleware = (req, res, next) => next();
+}
 
-// Import services
-const NotificationService = require('./services/NotificationService');
+try {
+  errorHandler = require('./middleware/errorHandler');
+} catch (error) {
+  console.warn('⚠️  Error handler not available');
+  errorHandler = (err, req, res, next) => {
+    console.error('Error:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  };
+}
+
+try {
+  logger = require('./utils/logger');
+} catch (error) {
+  console.warn('⚠️  Logger not available, using console');
+  logger = {
+    info: console.log.bind(console),
+    error: console.error.bind(console),
+    warn: console.warn.bind(console)
+  };
+}
+
+// Import services with graceful fallback
+let NotificationService, DataRetentionService;
+try {
+  NotificationService = require('./services/NotificationService');
+} catch (error) {
+  console.warn('⚠️  Notification service not available');
+}
+
+try {
+  DataRetentionService = require('./services/DataRetentionService');
+} catch (error) {
+  console.warn('⚠️  Data retention service not available');
+}
 
 class AppointmentSchedulerApp {
   constructor() {
-    this.app = express();
+    this.app = null;
     this.port = process.env.PORT || 3000;
-    this.initializeDatabase();
-    this.initializeMiddleware();
-    this.initializeRoutes();
-    this.initializeErrorHandling();
+    this.broadcastService = null;
+    this.validationResult = null;
+    this.initialized = false;
+    this.initPromise = this.initializeAsync();
   }
 
-  /**
-   * Initialize database connection
-   */
+  async initializeAsync() {
+    // Validate feature configuration first
+    console.log('🔍 Validating feature configuration...');
+    // Set bypass flag if we're starting admin panel only
+    if (!process.env.TELEGRAM_BOT_TOKEN && features.isAdminPanelEnabled()) {
+      process.env.BYPASS_TELEGRAM_CHECK = 'true';
+      console.log('ℹ️  Running in admin-only mode - bypassing Telegram validation');
+    }
+    
+    this.validationResult = await validator.validate();
+    
+    if (!this.validationResult.valid) {
+      // Check if we only have telegram-related errors and can bypass them
+      const nonTelegramErrors = this.validationResult.validation.errors.filter(
+        error => !error.includes('TELEGRAM_BOT_TOKEN')
+      );
+      
+      if (nonTelegramErrors.length > 0) {
+        console.error('❌ Critical validation errors. Server will not start.');
+        console.error('Errors:', nonTelegramErrors);
+        throw new Error('Critical feature configuration validation failed');
+      } else {
+        console.warn('⚠️  Non-critical validation warnings (telegram-related)');
+        console.warn('Warnings:', this.validationResult.validation.errors);
+      }
+    }
+
+    // Only initialize Express app if API server is enabled
+    if (features.isApiServerEnabled()) {
+      this.app = express();
+      this.initializeDatabase();
+      await this.initializeServices();
+      this.initializeMiddleware();
+      await this.initializeRoutes();
+      this.initializeErrorHandling();
+    } else {
+      console.log('ℹ️  API server disabled - running in minimal mode');
+    }
+    
+    this.initialized = true;
+  }
+
   initializeDatabase() {
-    const knexConfig = require('../database/knexfile')[process.env.NODE_ENV || 'development'];
+    if (!features.isDatabaseEnabled()) {
+      console.log('ℹ️  Database disabled by feature toggle');
+      return;
+    }
+
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/9ed284dd-42b1-4906-a5f9-81092a7a7cfe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.js:179',message:'Attempting to require knexfile',data:{nodeEnv:process.env.NODE_ENV||'development',path:'../knexfile'},timestamp:Date.now(),sessionId:'debug-session',runId:'startup',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    const knexConfig = require('../knexfile')[process.env.NODE_ENV || 'development'];
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/9ed284dd-42b1-4906-a5f9-81092a7a7cfe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.js:180',message:'Knexfile loaded successfully',data:{hasConfig:!!knexConfig,client:knexConfig?.client},timestamp:Date.now(),sessionId:'debug-session',runId:'startup',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     const knex = Knex(knexConfig);
     
     // Give Objection.js the knex instance
     Model.knex(knex);
     
-    console.log('Database initialized');
+    console.log('✅ Database initialized');
   }
 
-  /**
-   * Initialize middleware
-   */
+  async initializeServices() {
+    // Initialize broadcast service if enabled
+    if (features.isBroadcastSystemEnabled()) {
+      // this.broadcastService = new BroadcastService();
+      // await this.broadcastService.initialize();
+      console.log('ℹ️  Broadcast service enabled but not implemented yet');
+    }
+  }
+
   initializeMiddleware() {
+    if (!this.app) return;
+
     // Enhanced security headers
-    this.app.use(securityHeaders);
+    if (features.isInputValidationEnabled()) {
+      this.app.use(securityHeaders);
+      this.app.use(sanitizeInput);
+    }
 
     // Security audit logging
-    this.app.use(auditLogger);
-
-    // Input sanitization
-    this.app.use(sanitizeInput);
+    if (features.isAuditLoggingEnabled()) {
+      this.app.use(auditLogger);
+    }
 
     // CORS with stricter origin control
     this.app.use(cors({
@@ -77,9 +221,9 @@ class AppointmentSchedulerApp {
       optionsSuccessStatus: 200
     }));
 
-    // API Key validation (skip for webhooks and health checks)
+    // API Key validation (skip for webhooks, health checks, and admin panel)
     this.app.use((req, res, next) => {
-      const skipPaths = ['/health', '/api/webhooks'];
+      const skipPaths = ['/health', '/api/webhooks', '/admin'];
       if (skipPaths.some(path => req.path.startsWith(path))) {
         return next();
       }
@@ -87,9 +231,11 @@ class AppointmentSchedulerApp {
     });
 
     // Enhanced rate limiting based on endpoint type
-    this.app.use('/api/auth', ...applyRateLimit('auth'));
-    this.app.use('/api/appointments', ...applyRateLimit('booking'));
-    this.app.use('/api/', ...applyRateLimit('api'));
+    if (features.isRateLimitingEnabled()) {
+      this.app.use('/api/auth', ...applyRateLimit('auth'));
+      this.app.use('/api/appointments', ...applyRateLimit('booking'));
+      this.app.use('/api/', ...applyRateLimit('api'));
+    }
 
     // Body parsing with size limits
     this.app.use(express.json({ 
@@ -120,13 +266,12 @@ class AppointmentSchedulerApp {
       next();
     });
 
-    console.log('Enhanced security middleware initialized');
+    console.log('✅ Middleware initialized with feature toggles');
   }
 
-  /**
-   * Initialize API routes
-   */
-  initializeRoutes() {
+  async initializeRoutes() {
+    if (!this.app) return;
+
     // Health check endpoint
     this.app.get('/health', (req, res) => {
       res.json({
@@ -143,35 +288,65 @@ class AppointmentSchedulerApp {
         name: 'Appointment Scheduler API',
         version: '1.0.0',
         description: 'Complete appointment scheduling and management system',
-        endpoints: {
-          auth: '/api/auth',
-          appointments: '/api/appointments',
-          availability: '/api/availability',
-          services: '/api/services',
-          users: '/api/users',
-          waitlist: '/api/waitlist',
-          notifications: '/api/notifications'
+        endpoints: this.getAvailableEndpoints(),
+        features: {
+          enabled: featureManager.getEnabledFeatures(),
+          preset: process.env.FEATURE_PRESET || 'basic'
         },
         documentation: 'See README.md for detailed API documentation'
       });
     });
 
-    // API routes - auth middleware is applied in individual route files
-    this.app.use('/api/auth', authRoutes);
-    this.app.use('/api/appointments', appointmentRoutes);
-    this.app.use('/api/availability', availabilityRoutes);
+    // API routes - conditionally loaded based on features
+    if (features.isAuthEnabled()) {
+      this.app.use('/api/auth', authRoutes);
+    }
+    if (features.areAppointmentsEnabled()) {
+      this.app.use('/api/appointments', appointmentRoutes);
+    }
+    if (features.isAvailabilityEnabled()) {
+      this.app.use('/api/availability', availabilityRoutes);
+    }
     this.app.use('/api/services', serviceRoutes);
     this.app.use('/api/users', userRoutes);
-    this.app.use('/api/waitlist', waitlistRoutes);
+    if (features.isWaitlistEnabled()) {
+      this.app.use('/api/waitlist', waitlistRoutes);
+    }
     this.app.use('/api/notifications', notificationRoutes);
+    if (features.isDataRetentionEnabled() && dataRetentionRoutes) {
+      this.app.use('/api/retention', dataRetentionRoutes);
+    }
 
-    console.log('Routes initialized');
+    // Payment webhook (no auth required for MoneroPay callbacks)
+    this.app.use('/api/payments', paymentRoutes);
+    
+    // Optional features
+    if (features.isBroadcastSystemEnabled()) {
+      // this.app.use("/api/broadcast", broadcastRoutes);
+      console.log('ℹ️  Broadcast routes would be enabled here');
+    }
+
+    console.log('✅ Routes initialized with feature toggles');
   }
 
-  /**
-   * Initialize error handling
-   */
+  getAvailableEndpoints() {
+    const endpoints = {};
+    
+    if (features.isAuthEnabled()) endpoints.auth = '/api/auth';
+    if (features.areAppointmentsEnabled()) endpoints.appointments = '/api/appointments';
+    if (features.isAvailabilityEnabled()) endpoints.availability = '/api/availability';
+    endpoints.services = '/api/services';
+    endpoints.users = '/api/users';
+    if (features.isWaitlistEnabled()) endpoints.waitlist = '/api/waitlist';
+    endpoints.notifications = '/api/notifications';
+    if (features.isDataRetentionEnabled()) endpoints.dataRetention = '/api/retention';
+    if (features.isBroadcastSystemEnabled()) endpoints.broadcast = '/api/broadcast';
+    
+    return endpoints;
+  }
+
   initializeErrorHandling() {
+    if (!this.app) return;
     // 404 handler
     this.app.use('*', (req, res) => {
       res.status(404).json({
@@ -208,13 +383,66 @@ class AppointmentSchedulerApp {
       });
     });
 
-    console.log('Error handling initialized');
+    console.log('✅ Error handling initialized');
   }
 
-  /**
-   * Start the server
-   */
-  start() {
+  getFeatureStatusDisplay() {
+    const enabledFeatures = featureManager.getEnabledFeatures();
+    const lines = [];
+    
+    // Group features by category for better display
+    const categories = {
+      'Core': ['core.telegram_bot', 'core.api_server', 'core.database', 'core.authentication'],
+      'Scheduling': ['scheduling.appointments', 'scheduling.availability', 'scheduling.waitlist'],
+      'Communications': ['communications.email_notifications', 'communications.sms_notifications', 'communications.telegram_notifications'],
+      'Admin': ['admin.admin_panel', 'admin.admin_security', 'admin.user_management'],
+      'Support': ['support.live_chat', 'support.ticket_system'],
+      'Security': ['security.rate_limiting', 'security.input_validation', 'security.audit_logging']
+    };
+    
+    for (const [category, features] of Object.entries(categories)) {
+      const categoryFeatures = features.filter(f => enabledFeatures.includes(f));
+      if (categoryFeatures.length > 0) {
+        lines.push(`  ✅ ${category}: ${categoryFeatures.map(f => f.split('.')[1]).join(', ')}`);
+      }
+    }
+    
+    return lines.join('\\n');
+  }
+
+  async start() {
+    // Wait for initialization to complete
+    if (!this.initialized) {
+      console.log('⏳ Waiting for initialization to complete...');
+      await this.initPromise;
+    }
+    
+    // Don't start HTTP server if API is disabled
+    if (!features.isApiServerEnabled()) {
+      console.log(`
+🤖 Lodge Scheduler - Bot Only Mode
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ℹ️  API Server: DISABLED
+🎯 Mode: Telegram Bot Only
+⚙️  Features: ${featureManager.getEnabledFeatures().length} enabled
+📅 Started: ${new Date().toLocaleString()}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Use 'npm run start:bot' to start the Telegram bot separately.
+      `);
+      return;
+    }
+
+    // Initialize data retention service if enabled
+    if (features.isDataRetentionEnabled() && DataRetentionService) {
+      try {
+        const dataRetentionService = new DataRetentionService();
+        await dataRetentionService.initialize();
+      } catch (error) {
+        console.warn('⚠️  Failed to initialize data retention service:', error.message);
+      }
+    }
+    
     this.app.listen(this.port, () => {
       console.log(`
 🚀 Appointment Scheduler API Server Started
@@ -238,14 +466,8 @@ class AppointmentSchedulerApp {
   GET    /api/waitlist
   POST   /api/waitlist
   
-🎯 Features Enabled:
-  ✅ Availability checking & conflict resolution
-  ✅ Booking confirmation & cancellation logic
-  ✅ Client notifications (Email & SMS)
-  ✅ Appointment modification & rescheduling
-  ✅ Waitlist & overbooking management
-  ✅ Timezone handling & date validation
-  ✅ Comprehensive logging & monitoring
+🎯 Features Enabled (${featureManager.getEnabledFeatures().length}):
+${this.getFeatureStatusDisplay()}
 
 Ready to handle appointments! 🗓️
       `);
@@ -253,14 +475,13 @@ Ready to handle appointments! 🗓️
       logger.info('Appointment Scheduler API started', {
         port: this.port,
         environment: process.env.NODE_ENV || 'development',
+        preset: process.env.FEATURE_PRESET || 'basic',
+        features_enabled: featureManager.getEnabledFeatures().length,
         timestamp: new Date().toISOString()
       });
     });
   }
 
-  /**
-   * Graceful shutdown
-   */
   gracefulShutdown() {
     console.log('\\nShutting down gracefully...');
     
@@ -274,16 +495,43 @@ Ready to handle appointments! 🗓️
   }
 }
 
-// Handle graceful shutdown
-process.on('SIGTERM', () => app.gracefulShutdown());
-process.on('SIGINT', () => app.gracefulShutdown());
+// Handle graceful shutdown and errors
+process.on('SIGTERM', () => app?.gracefulShutdown());
+process.on('SIGINT', () => app?.gracefulShutdown());
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection:', reason);
+  console.error('Promise:', promise);
+});
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  process.exit(1);
+});
 
 // Create and start the application
-const app = new AppointmentSchedulerApp();
+let app;
+
+async function main() {
+  try {
+    app = new AppointmentSchedulerApp();
+    
+    // Wait for initialization before starting
+    console.log('⏳ Initializing application...');
+    await app.initPromise;
+    console.log('✅ Initialization complete');
+    
+    // Start the server
+    await app.start();
+  } catch (error) {
+    console.error('❌ FATAL: Application failed to start');
+    console.error('Error:', error.message);
+    console.error('Stack:', error.stack);
+    process.exit(1);
+  }
+}
 
 // Only start the server if this file is run directly
 if (require.main === module) {
-  app.start();
+  main();
 }
 
-module.exports = app;
+module.exports = { AppointmentSchedulerApp };

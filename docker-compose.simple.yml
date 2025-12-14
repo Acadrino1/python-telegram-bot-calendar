@@ -1,0 +1,25 @@
+# Simplified Docker Compose for Lodge Scheduler Bot
+# Use this for lightweight bot-only deployment with SQLite
+#
+# Usage: docker-compose -f docker-compose.simple.yml up -d
+
+version: '3.8'
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lodge-scheduler-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+    volumes:
+      # Persist SQLite database
+      - ./data:/app/data
+      - ./database:/app/database
+      - ./logs:/app/logs
+      - ./referral-codes.json:/app/referral-codes.json
+    # No port needed - bot uses Telegram polling, not webhooks
