@@ -2651,8 +2651,10 @@ class AdminHandler {
    */
   async handleBroadcastCoupon(ctx) {
     try {
+      console.log('📢 handleBroadcastCoupon called');
       await ctx.answerCbQuery();
       ctx.session.broadcastingCoupon = true;
+      console.log('📢 Session flag set, sending prompt');
 
       await ctx.reply(
         '*Broadcast Coupon*\n\n' +
@@ -2662,9 +2664,17 @@ class AdminHandler {
         { parse_mode: 'Markdown' }
       );
 
+      console.log('📢 Prompt sent, awaiting amount input');
       return true;
     } catch (error) {
       console.error('Error broadcasting coupon:', error);
+      console.error('Stack:', error.stack);
+      console.error('Full error details:', {
+        message: error.message,
+        name: error.name,
+        code: error.code,
+        stack: error.stack
+      });
       await ctx.answerCbQuery('Error');
       return true;
     }
@@ -2744,12 +2754,16 @@ class AdminHandler {
       }
 
       if (ctx.session.broadcastingCoupon) {
+        console.log('📢 Processing broadcast coupon amount:', parsedAmount);
         delete ctx.session.broadcastingCoupon;
 
+        console.log('📢 Creating coupon...');
         const coupon = await Coupon.createCoupon(parsedAmount, 7);
-        const BotChannel = require('../../../models/BotChannel');
+        console.log('📢 Coupon created:', coupon.code);
 
+        const BotChannel = require('../../../models/BotChannel');
         const channels = await BotChannel.getActiveBroadcastChannels();
+        console.log('📢 Found', channels.length, 'broadcast channels');
 
         if (channels.length === 0) {
           await ctx.reply('❌ No active broadcast channels configured.');
@@ -2765,6 +2779,7 @@ class AdminHandler {
           `Use code: \`${coupon.code}\`\n\n` +
           `Valid for 7 days. First come, first served! 🏃`;
 
+        console.log('📢 Broadcasting to channels...');
         for (const channel of channels) {
           try {
             const options = { parse_mode: 'Markdown' };
@@ -2772,17 +2787,20 @@ class AdminHandler {
               options.message_thread_id = channel.topic_id;
             }
 
+            console.log(`📢 Sending to channel: ${channel.chat_id}`);
             await this.bot.telegram.sendMessage(channel.chat_id, message, options);
             await Coupon.markBroadcast(coupon.id, channel.chat_id);
             sent++;
+            console.log(`📢 ✅ Sent to ${channel.chat_id}`);
           } catch (error) {
             failed++;
-            console.error(`Failed to broadcast coupon to ${channel.chat_id}:`, error.message);
+            console.error(`📢 ❌ Failed to broadcast coupon to ${channel.chat_id}:`, error.message);
             console.error('Stack:', error.stack);
           }
           await new Promise(r => setTimeout(r, 100));
         }
 
+        console.log(`📢 Broadcast complete: ${sent} sent, ${failed} failed`);
         await ctx.reply(
           `✅ *Coupon Broadcast Complete!*\n\n` +
           `Code: \`${coupon.code}\`\n` +
