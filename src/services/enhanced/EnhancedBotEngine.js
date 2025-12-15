@@ -806,16 +806,20 @@ I'm here to help you schedule appointments for Lodge Mobile services.
 🔧 Technical Support
 📲 Device Upgrade
 
-*Quick Commands:*
-📅 /book - Schedule an appointment
-📋 /myappointments - View your bookings
-❌ /cancel - Cancel an appointment
-🎧 /help - Get help
-
-Let's get started! Use /book to schedule your appointment.
+Please choose an option below to get started:
         `;
 
-        await ctx.replyWithMarkdown(welcomeMessage);
+        await ctx.reply(welcomeMessage, {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '📅 Book Appointment', callback_data: 'book' }],
+              [{ text: '📋 My Appointments', callback_data: 'my_appointments' }],
+              [{ text: '🎟️ Redeem Coupon', callback_data: 'redeem_coupon' }],
+              [{ text: '🎧 Support', callback_data: 'support_main' }]
+            ]
+          }
+        });
       } catch (error) {
         console.error('❌ Start command error:', error);
         await ctx.reply('Welcome! Use /book to schedule an appointment or /help for more information.');
