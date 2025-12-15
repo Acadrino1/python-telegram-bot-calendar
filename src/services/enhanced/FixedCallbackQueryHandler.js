@@ -59,6 +59,9 @@ class FixedCallbackQueryHandler extends EventEmitter {
     // Wire up handler dependencies
     this.adminHandler.setAdminTicketsHandler(this.adminTicketsHandler);
     this.adminTicketsHandler.setSupportHandler(this.supportHandler);
+
+    // Expose adminHandler to services so MessageHandler can access it for coupon broadcasting
+    this.services.adminHandler = this.adminHandler;
   }
 
   /**
