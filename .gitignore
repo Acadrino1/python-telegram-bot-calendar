@@ -150,6 +150,7 @@ claude-flow.ps1
 hive-mind-prompt-*.txt
 
 # Archives
+archive/
 docs/archive/
 scripts/archive/
 backups/
@@ -157,3 +158,5 @@ backups/
 # Temp files
 nul
 *.backup.js
+*-test-issue.json
+template-preview.txt
