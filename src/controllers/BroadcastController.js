@@ -586,19 +586,33 @@ class BroadcastController {
       
       const failedRecipients = await query;
       let retriedCount = 0;
-      
+      const retryErrors = [];
+
+      // ERROR HANDLING: Wrap each retry in try-catch for accurate tracking
       for (const recipient of failedRecipients) {
-        if (recipient.canRetry()) {
-          await recipient.scheduleRetry();
-          retriedCount++;
+        try {
+          if (recipient.canRetry()) {
+            await recipient.scheduleRetry();
+            retriedCount++;
+          }
+        } catch (error) {
+          retryErrors.push({
+            recipientId: recipient.id,
+            userId: recipient.user_id,
+            error: error.message
+          });
+          logger.error(`Failed to schedule retry for recipient ${recipient.id}:`, error);
         }
       }
-      
+
+      // ERROR HANDLING: Return accurate statistics including errors
       res.json({
         success: true,
         data: {
           total_failed: failedRecipients.length,
-          retried_count: retriedCount
+          retried_count: retriedCount,
+          retry_errors: retryErrors.length,
+          errors: retryErrors.slice(0, 5) // First 5 errors for visibility
         }
       });
     } catch (error) {

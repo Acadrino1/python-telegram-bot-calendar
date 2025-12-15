@@ -399,16 +399,34 @@ class NotificationService {
         scheduled_for
       } = notificationData;
 
-      // Get notification template
-      const template = await NotificationTemplate.query()
+      // Get notification template with fallback
+      let template = await NotificationTemplate.query()
         .where('name', template_name)
         .where('type', type)
         .where('is_active', true)
         .first();
 
+      // ERROR HANDLING: Fallback to default template if specific not found
       if (!template) {
-        console.warn(`Template not found: ${template_name} (${type})`);
-        return;
+        console.warn(`Template not found: ${template_name} (${type}), trying default`);
+
+        template = await NotificationTemplate.query()
+          .where('name', 'default')
+          .where('type', type)
+          .where('is_active', true)
+          .first();
+
+        if (!template) {
+          // ERROR HANDLING: Throw error for monitoring instead of silent return
+          const error = new Error(`No template or fallback found: ${template_name} (${type})`);
+          console.error('❌ Missing notification template:', {
+            requestedTemplate: template_name,
+            type,
+            appointmentId: appointment_id,
+            userId: user_id
+          });
+          throw error;
+        }
       }
 
       // Process template with data
@@ -462,16 +480,32 @@ class NotificationService {
         return acc;
       }, {});
 
+      // ERROR HANDLING: Track batch results with structured logging
+      const batchStats = {
+        total: allPending.length,
+        success: 0,
+        failed: 0,
+        errors: []
+      };
+
       // Process each type in parallel
       await Promise.all(Object.entries(notificationsByType).map(async ([type, notifications]) => {
         // Process notifications of same type in batches to avoid overwhelming services
         const batchSize = type === NotificationType.EMAIL ? 5 : 10;
         for (let i = 0; i < notifications.length; i += batchSize) {
           const batch = notifications.slice(i, i + batchSize);
-          await Promise.allSettled(batch.map(async (notification) => {
+          const results = await Promise.allSettled(batch.map(async (notification) => {
             try {
               await this.sendNotification(notification);
+              batchStats.success++;
             } catch (error) {
+              batchStats.failed++;
+              batchStats.errors.push({
+                notificationId: notification.id,
+                type: notification.type,
+                recipient: notification.recipient,
+                error: error.message
+              });
               console.error(`Failed to send notification ${notification.id}:`, error);
               await this.handleNotificationError(notification, error);
             }
@@ -479,8 +513,21 @@ class NotificationService {
         }
       }));
 
+      // ERROR HANDLING: Log batch summary with context
+      if (batchStats.failed > 0) {
+        console.warn('⚠️ Notification batch completed with failures:', {
+          total: batchStats.total,
+          success: batchStats.success,
+          failed: batchStats.failed,
+          errors: batchStats.errors.slice(0, 5) // First 5 errors for visibility
+        });
+      }
+
+      return batchStats;
+
     } catch (error) {
       console.error('Error processing pending notifications:', error);
+      throw error; // Re-throw for visibility
     } finally {
       this.isRunning = false;
     }
