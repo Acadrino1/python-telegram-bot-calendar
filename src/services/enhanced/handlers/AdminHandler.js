@@ -207,6 +207,12 @@ class AdminHandler {
       return await this.showAdminPanel(ctx);
     }
 
+    // Handle preset coupon amounts
+    if (callbackData.startsWith('broadcast_coupon_')) {
+      const amount = parseInt(callbackData.replace('broadcast_coupon_', ''));
+      return await this.handleBroadcastCouponPreset(ctx, amount);
+    }
+
     // Handle individual booking cancellation (confirmation dialog)
     if (callbackData.startsWith('adm_cxl_') && !callbackData.startsWith('adm_cxl_ok_')) {
       const bookingUuid = callbackData.replace('adm_cxl_', '');
@@ -2671,10 +2677,25 @@ class AdminHandler {
 
       await ctx.reply(
         '*Broadcast Coupon*\n\n' +
-        'Enter discount amount in CAD (e.g., 25)\n\n' +
-        'This will create a coupon and send it to the public Telegram group.\n\n' +
-        '_Send the amount as your next message._',
-        { parse_mode: 'Markdown' }
+        'Select a preset amount or enter custom value:\n\n' +
+        '_Or type custom amount (e.g., 25)_',
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: '$10', callback_data: 'broadcast_coupon_10' },
+                { text: '$25', callback_data: 'broadcast_coupon_25' },
+                { text: '$50', callback_data: 'broadcast_coupon_50' }
+              ],
+              [
+                { text: '$75', callback_data: 'broadcast_coupon_75' },
+                { text: '$100', callback_data: 'broadcast_coupon_100' }
+              ],
+              [{ text: '❌ Cancel', callback_data: 'admin_coupons' }]
+            ]
+          }
+        }
       );
 
       console.log('📢 Prompt sent, awaiting amount input');
@@ -2688,6 +2709,81 @@ class AdminHandler {
         code: error.code,
         stack: error.stack
       });
+      await ctx.answerCbQuery('Error');
+      return true;
+    }
+  }
+
+  /**
+   * Handle preset coupon amount broadcast
+   */
+  async handleBroadcastCouponPreset(ctx, amount) {
+    try {
+      await ctx.answerCbQuery();
+      delete ctx.session.broadcastingCoupon;
+
+      console.log(`📢 Broadcasting preset $${amount} coupon...`);
+      const Coupon = require('../../../models/Coupon');
+      const coupon = await Coupon.createCoupon(amount, 7);
+      console.log('📢 Coupon created:', coupon.code);
+
+      const BotChannel = require('../../../models/BotChannel');
+      const channels = await BotChannel.getActiveBroadcastChannels();
+
+      if (channels.length === 0) {
+        await ctx.editMessageText('❌ No active broadcast channels configured.');
+        return true;
+      }
+
+      let sent = 0;
+      let failed = 0;
+
+      const expiryDate = moment().tz('America/New_York').add(7, 'days').format('MMM DD');
+      const message =
+        `🎁 *FLASH SALE - Limited Time!*\n\n` +
+        `💰 Get *$${amount} OFF* your next appointment!\n\n` +
+        `🎟️ Coupon Code: \`${coupon.code}\`\n` +
+        `⏰ Expires: ${expiryDate} at 11:59 PM\n` +
+        `⚡ One code per customer - First come, first served!\n\n` +
+        `👇 Book your appointment now and save!`;
+
+      for (const channel of channels) {
+        try {
+          const options = {
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '📅 Book Now & Save $' + amount, url: 'https://t.me/' + this.bot.botInfo.username }
+              ]]
+            }
+          };
+          if (channel.topic_id) {
+            options.message_thread_id = channel.topic_id;
+          }
+
+          await this.bot.telegram.sendMessage(channel.chat_id, message, options);
+          await Coupon.markBroadcast(coupon.id, channel.chat_id);
+          sent++;
+        } catch (error) {
+          failed++;
+          console.error(`❌ Failed to broadcast to ${channel.chat_id}:`, error.message);
+        }
+        await new Promise(r => setTimeout(r, 100));
+      }
+
+      await ctx.editMessageText(
+        `✅ *Coupon Broadcast Complete!*\n\n` +
+        `Code: \`${coupon.code}\`\n` +
+        `Amount: $${amount}\n` +
+        `Expires: ${expiryDate}\n` +
+        `Sent to: ${sent} channel(s)\n` +
+        `Failed: ${failed}`,
+        { parse_mode: 'Markdown' }
+      );
+
+      return true;
+    } catch (error) {
+      console.error('Error broadcasting preset coupon:', error);
       await ctx.answerCbQuery('Error');
       return true;
     }
@@ -2786,16 +2882,28 @@ class AdminHandler {
         let sent = 0;
         let failed = 0;
 
+        // Calculate expiry date for display
+        const expiryDate = moment().tz('America/New_York').add(7, 'days').format('MMM DD');
+
         const message =
-          `🎁 *Limited Time Offer!*\n\n` +
-          `Get $${parsedAmount} OFF your next appointment!\n\n` +
-          `Use code: \`${coupon.code}\`\n\n` +
-          `Valid for 7 days. First come, first served! 🏃`;
+          `🎁 *FLASH SALE - Limited Time!*\n\n` +
+          `💰 Get *$${parsedAmount} OFF* your next appointment!\n\n` +
+          `🎟️ Coupon Code: \`${coupon.code}\`\n` +
+          `⏰ Expires: ${expiryDate} at 11:59 PM\n` +
+          `⚡ One code per customer - First come, first served!\n\n` +
+          `👇 Book your appointment now and save!`;
 
         console.log('📢 Broadcasting to channels...');
         for (const channel of channels) {
           try {
-            const options = { parse_mode: 'Markdown' };
+            const options = {
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [[
+                  { text: '📅 Book Now & Save $' + parsedAmount, url: 'https://t.me/' + this.bot.botInfo.username }
+                ]]
+              }
+            };
             if (channel.topic_id) {
               options.message_thread_id = channel.topic_id;
             }
@@ -2818,6 +2926,7 @@ class AdminHandler {
           `✅ *Coupon Broadcast Complete!*\n\n` +
           `Code: \`${coupon.code}\`\n` +
           `Amount: $${parsedAmount}\n` +
+          `Expires: ${expiryDate}\n` +
           `Sent to: ${sent} channel(s)\n` +
           `Failed: ${failed}`,
           { parse_mode: 'Markdown' }
