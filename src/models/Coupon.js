@@ -119,30 +119,48 @@ class Coupon extends Model {
 
   /**
    * Redeem a coupon for a booking
+   * Uses transaction with pessimistic locking to prevent double-spend
    */
   static async redeemCoupon(code, telegramId, appointmentId = null) {
-    const validation = await this.validateCoupon(code);
+    const { transaction } = require('objection');
 
-    if (!validation.valid) {
-      return validation;
-    }
+    return await transaction(Coupon.knex(), async (trx) => {
+      // Lock row for update to prevent race condition
+      const coupon = await this.query(trx)
+        .where('code', code.toUpperCase().trim())
+        .where('status', 'active')
+        .forUpdate()
+        .first();
 
-    const coupon = validation.coupon;
-    const now = moment().tz('America/New_York').format('YYYY-MM-DD HH:mm:ss');
+      if (!coupon) {
+        return { valid: false, error: 'Coupon code not found or already redeemed' };
+      }
 
-    await this.query().where('id', coupon.id).patch({
-      status: 'redeemed',
-      redeemed_by_telegram_id: telegramId.toString(),
-      redeemed_for_appointment_id: appointmentId,
-      redeemed_at: now
+      // Validate expiry within transaction
+      const now = moment().tz('America/New_York');
+      const expiresAt = moment(coupon.expires_at).tz('America/New_York');
+
+      if (now.isAfter(expiresAt)) {
+        // Mark as expired atomically
+        await this.query(trx).where('id', coupon.id).patch({ status: 'expired' });
+        return { valid: false, error: 'This coupon has expired' };
+      }
+
+      // Atomic redemption
+      await this.query(trx).where('id', coupon.id).patch({
+        status: 'redeemed',
+        redeemed_by_telegram_id: telegramId.toString(),
+        redeemed_for_appointment_id: appointmentId,
+        redeemed_at: moment().tz('America/New_York').format('YYYY-MM-DD HH:mm:ss')
+      });
+
+      return {
+        valid: true,
+        redeemed: true,
+        amount: coupon.amount,
+        code: coupon.code
+      };
     });
-
-    return {
-      valid: true,
-      redeemed: true,
-      amount: coupon.amount,
-      code: coupon.code
-    };
   }
 
   /**

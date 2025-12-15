@@ -71,23 +71,39 @@ class CouponBudget extends Model {
 
   /**
    * Deduct amount from weekly budget
+   * Uses transaction with pessimistic locking to prevent budget overspend
    */
   static async deductBudget(amount) {
-    const budget = await this.getCurrentWeekBudget();
+    const { transaction } = require('objection');
 
-    if ((budget.amount_used + amount) > budget.budget_limit) {
-      return { success: false, error: 'Weekly budget exceeded' };
-    }
+    return await transaction(CouponBudget.knex(), async (trx) => {
+      // Lock budget row for update to prevent race condition
+      const budget = await this.query(trx)
+        .where('week_start', '<=', this.knex().fn.now())
+        .where('week_end', '>=', this.knex().fn.now())
+        .forUpdate()
+        .first();
 
-    await this.query().where('id', budget.id).patch({
-      amount_used: budget.amount_used + amount,
-      coupons_issued: budget.coupons_issued + 1
+      if (!budget) {
+        throw new Error('No active budget period found');
+      }
+
+      // Check budget limit atomically
+      if ((budget.amount_used + amount) > budget.budget_limit) {
+        return { success: false, error: 'Weekly budget exceeded' };
+      }
+
+      // Atomic update
+      await this.query(trx).where('id', budget.id).patch({
+        amount_used: budget.amount_used + amount,
+        coupons_issued: budget.coupons_issued + 1
+      });
+
+      return {
+        success: true,
+        remaining: budget.budget_limit - budget.amount_used - amount
+      };
     });
-
-    return {
-      success: true,
-      remaining: budget.budget_limit - budget.amount_used - amount
-    };
   }
 
   /**

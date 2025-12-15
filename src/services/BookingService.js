@@ -49,11 +49,12 @@ class BookingService {
         throw new Error(`Booking rejected: ${validation.reason}`);
       }
 
-      // Check if slot is available
+      // Check if slot is available with pessimistic lock to prevent race condition
       const existingAppointment = await Appointment.query(trx)
         .where('appointment_datetime', appointment_datetime)
         .where('provider_id', provider_id)
         .whereIn('status', ['scheduled', 'confirmed', 'in_progress'])
+        .forUpdate() // SECURITY: Lock row to prevent double-booking
         .first();
 
       if (existingAppointment) {

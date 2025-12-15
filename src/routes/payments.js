@@ -6,6 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const MoneroPayService = require('../services/MoneroPayService');
+const { authMiddleware } = require('../middleware/auth');
 
 const moneroPayService = new MoneroPayService();
 
@@ -32,6 +33,34 @@ router.post('/webhook', async (req, res) => {
     if (!webhookData.address) {
       console.warn('Webhook missing address');
       return res.status(400).json({ error: 'Missing address' });
+    }
+
+    // SECURITY: Verify webhook signature if secret is configured
+    const webhookSecret = process.env.MONEROPAY_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      const crypto = require('crypto');
+      const signature = req.headers['x-webhook-signature'];
+
+      if (!signature) {
+        console.error('Webhook missing signature header');
+        return res.status(401).json({ error: 'Missing webhook signature' });
+      }
+
+      // Verify HMAC signature
+      const payload = JSON.stringify(req.body);
+      const expectedSignature = crypto
+        .createHmac('sha256', webhookSecret)
+        .update(payload)
+        .digest('hex');
+
+      if (signature !== expectedSignature) {
+        console.error('Invalid webhook signature');
+        return res.status(401).json({ error: 'Invalid webhook signature' });
+      }
+
+      console.log('✅ Webhook signature verified');
+    } else {
+      console.warn('⚠️ MONEROPAY_WEBHOOK_SECRET not configured - webhooks are NOT authenticated!');
     }
 
     // Process the webhook
@@ -110,8 +139,9 @@ router.post('/webhook', async (req, res) => {
 /**
  * GET /api/payments/:id/status
  * Check payment status
+ * SECURITY: Requires authentication and ownership verification
  */
-router.get('/:id/status', async (req, res) => {
+router.get('/:id/status', authMiddleware, async (req, res) => {
   try {
     const paymentId = req.params.id;
 
@@ -121,6 +151,12 @@ router.get('/:id/status', async (req, res) => {
     const payment = await knex('payments').where('id', paymentId).first();
     if (!payment) {
       return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    // SECURITY: Verify user owns this payment (or is admin)
+    if (payment.user_id !== req.user.id && req.user.role !== 'admin') {
+      console.warn(`Unauthorized payment access attempt: user ${req.user.id} tried to access payment ${paymentId}`);
+      return res.status(403).json({ error: 'Unauthorized - you do not own this payment' });
     }
 
     // Get latest status from MoneroPay
