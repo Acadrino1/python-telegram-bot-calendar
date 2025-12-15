@@ -792,6 +792,36 @@ class EnhancedBotEngine extends MemoryManager {
       }
     });
 
+    // Start command - entry point for new users
+    this.bot.command('start', async (ctx) => {
+      try {
+        const welcomeMessage = `
+👋 *Welcome to Lodge Mobile Activations!*
+
+I'm here to help you schedule appointments for Lodge Mobile services.
+
+*Available Services:*
+🆕 New Registration
+📱 SIM Card Activation
+🔧 Technical Support
+📲 Device Upgrade
+
+*Quick Commands:*
+📅 /book - Schedule an appointment
+📋 /myappointments - View your bookings
+❌ /cancel - Cancel an appointment
+🎧 /help - Get help
+
+Let's get started! Use /book to schedule your appointment.
+        `;
+
+        await ctx.replyWithMarkdown(welcomeMessage);
+      } catch (error) {
+        console.error('❌ Start command error:', error);
+        await ctx.reply('Welcome! Use /book to schedule an appointment or /help for more information.');
+      }
+    });
+
     // Help command
     this.bot.command('help', async (ctx) => {
       try {
@@ -1149,8 +1179,23 @@ Need help? Contact support with /support or /ticket
       this.startBookingReminderScheduler();
 
       // Start the bot (non-blocking - starts long polling)
-      this.bot.launch().then(() => {
+      this.bot.launch().then(async () => {
         console.log('📡 Telegram long polling connected');
+
+        // Set bot command menu for Telegram UI
+        try {
+          await this.bot.telegram.setMyCommands([
+            { command: 'start', description: 'Start or restart the bot' },
+            { command: 'book', description: 'Book an appointment' },
+            { command: 'myappointments', description: 'View your bookings' },
+            { command: 'cancel', description: 'Cancel an appointment' },
+            { command: 'help', description: 'Get help' },
+            { command: 'admin', description: 'Admin dashboard (admins only)' }
+          ]);
+          console.log('✅ Bot commands registered in Telegram UI');
+        } catch (err) {
+          console.error('❌ Failed to set bot commands:', err);
+        }
       }).catch(err => {
         console.error('❌ Bot launch error:', err);
       });

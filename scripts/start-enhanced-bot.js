@@ -67,6 +67,11 @@ console.log('   Services: New Registration, SIM Activation, Technical Support, D
 // Start the bot
 async function startBot() {
   try {
+    // Run database migrations
+    console.log('🔄 Running database migrations...');
+    await knex.migrate.latest();
+    console.log('✅ Database migrations up to date');
+
     const bot = new SimpleTelegramBot();
     await bot.start();
     
