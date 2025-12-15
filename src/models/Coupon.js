@@ -1,6 +1,9 @@
 const { Model } = require('objection');
 const moment = require('moment-timezone');
 
+// SECURITY: In-memory rate limiter for coupon validation (brute force protection)
+const couponAttempts = new Map();
+
 class Coupon extends Model {
   static get tableName() {
     return 'coupons';
@@ -89,8 +92,37 @@ class Coupon extends Model {
 
   /**
    * Validate and get coupon if usable
+   * SECURITY: Rate limited to prevent brute force attacks
    */
-  static async validateCoupon(code) {
+  static async validateCoupon(code, userId = null) {
+    // SECURITY: Rate limit coupon validation attempts
+    const key = userId || 'global';
+    const now = Date.now();
+    const windowMs = 5 * 60 * 1000; // 5 minutes
+    const maxAttempts = 5;
+
+    if (!couponAttempts.has(key)) {
+      couponAttempts.set(key, []);
+    }
+
+    const attempts = couponAttempts.get(key);
+    // Remove old attempts outside window
+    const recentAttempts = attempts.filter(time => now - time < windowMs);
+    couponAttempts.set(key, recentAttempts);
+
+    if (recentAttempts.length >= maxAttempts) {
+      console.warn(`Coupon validation rate limit exceeded for ${key}`);
+      return {
+        valid: false,
+        error: 'Too many attempts. Please wait 5 minutes before trying again.',
+        rateLimited: true
+      };
+    }
+
+    // Track this attempt
+    recentAttempts.push(now);
+    couponAttempts.set(key, recentAttempts);
+
     const coupon = await this.findByCode(code);
 
     if (!coupon) {

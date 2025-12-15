@@ -381,8 +381,8 @@ class PaymentHandler {
       const { Model } = require('objection');
       const knex = Model.knex();
 
-      // Validate coupon
-      const validation = await Coupon.validateCoupon(couponCode);
+      // Validate coupon with rate limiting per user
+      const validation = await Coupon.validateCoupon(couponCode, ctx.from.id.toString());
 
       if (!validation.valid) {
         await ctx.reply(`❌ ${validation.error}\n\nPlease try again or contact support.`);
