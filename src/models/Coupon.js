@@ -52,7 +52,22 @@ class Coupon extends Model {
    * Create a new coupon with specified amount
    */
   static async createCoupon(amount, expiresInDays = 7) {
-    const code = this.generateCode();
+    // Generate unique code with collision check
+    let code;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (attempts < maxAttempts) {
+      code = this.generateCode();
+      const existing = await this.query().where('code', code).first();
+      if (!existing) break;
+      attempts++;
+    }
+
+    if (attempts >= maxAttempts) {
+      throw new Error('Failed to generate unique coupon code after ' + maxAttempts + ' attempts');
+    }
+
     const expiresAt = moment().tz('America/New_York').add(expiresInDays, 'days').endOf('day').format('YYYY-MM-DD HH:mm:ss');
 
     return this.query().insert({
