@@ -237,13 +237,19 @@ class FixedCallbackQueryHandler extends EventEmitter {
 
     // Admin actions (including pending list, today bookings, completion, etc.)
     if (callbackData.startsWith('approve_') || callbackData.startsWith('deny_') ||
-        callbackData.startsWith('admin_') || callbackData.startsWith('adm_cxl_')) {
+        callbackData.startsWith('admin_') || callbackData.startsWith('adm_cxl_') ||
+        callbackData.startsWith('broadcast_')) {
       return await this.adminHandler.handle(ctx, callbackData);
     }
 
     // User appointment management (cancel, edit)
     if (callbackData.startsWith('user_cancel_') || callbackData.startsWith('user_edit_')) {
       return await this.navigationHandler.handleUserAppointmentAction(ctx, callbackData);
+    }
+
+    // Coupon redemption
+    if (callbackData === 'redeem_coupon') {
+      return await this.handleRedeemCoupon(ctx);
     }
 
     // Generic service selection (fallback)
@@ -264,6 +270,35 @@ class FixedCallbackQueryHandler extends EventEmitter {
     }
 
     return false; // Not handled
+  }
+
+  /**
+   * Handle coupon redemption flow
+   */
+  async handleRedeemCoupon(ctx) {
+    try {
+      await ctx.answerCbQuery();
+      ctx.session.redeemingCoupon = true;
+
+      await ctx.editMessageText(
+        '*🎟️ Redeem Coupon Code*\n\n' +
+        'Enter your coupon code to redeem your discount.\n\n' +
+        '_Example: LODGE-ABCD-1234_\n\n' +
+        '💡 Coupon codes are valid for 7 days and can only be used once.',
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [[{ text: '❌ Cancel', callback_data: 'main_menu' }]]
+          }
+        }
+      );
+
+      return true;
+    } catch (error) {
+      console.error('Error starting coupon redemption:', error);
+      await ctx.answerCbQuery('Error');
+      return false;
+    }
   }
 
   /**

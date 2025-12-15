@@ -52,6 +52,12 @@ class MessageHandler {
         }
       }
 
+      // Check if user is redeeming a coupon
+      if (ctx.session?.redeemingCoupon) {
+        const handled = await this.processUserCouponRedemption(ctx, ctx.message.text.trim());
+        if (handled) return;
+      }
+
       // Check if admin is creating/broadcasting coupon
       if (ctx.session?.creatingCoupon || ctx.session?.broadcastingCoupon) {
         const adminHandler = this.services?.adminHandler;
@@ -250,6 +256,75 @@ class MessageHandler {
       // Silent - no action needed
     } catch (error) {
       console.error('Error handling poll message:', error);
+    }
+  }
+
+  async processUserCouponRedemption(ctx, code) {
+    try {
+      const Coupon = require('../../models/Coupon');
+      const moment = require('moment-timezone');
+
+      // Validate the coupon code
+      const validation = await Coupon.validateCoupon(code);
+
+      if (!validation.valid) {
+        await ctx.reply(
+          `❌ *Invalid Coupon*\n\n${validation.error}\n\nPlease try again or contact support.`,
+          {
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [[{ text: '🏠 Main Menu', callback_data: 'main_menu' }]]
+            }
+          }
+        );
+        ctx.session.redeemingCoupon = false;
+        return true;
+      }
+
+      // Store coupon in session for later use at checkout
+      const coupon = validation.coupon;
+      ctx.session.redeemedCoupon = {
+        id: coupon.id,
+        code: coupon.code,
+        amount: coupon.amount,
+        redeemedAt: moment().tz('America/New_York').format('YYYY-MM-DD HH:mm:ss')
+      };
+
+      const expiryDate = moment(coupon.expires_at).tz('America/New_York').format('MMM DD, YYYY');
+
+      await ctx.reply(
+        `✅ *Coupon Redeemed Successfully!*\n\n` +
+        `💰 Discount: $${coupon.amount}\n` +
+        `🎟️ Code: \`${coupon.code}\`\n` +
+        `⏰ Valid Until: ${expiryDate}\n\n` +
+        `Your discount will be automatically applied at checkout when you book an appointment.\n\n` +
+        `📅 Ready to book now?`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '📅 Book Appointment', callback_data: 'book' }],
+              [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+            ]
+          }
+        }
+      );
+
+      ctx.session.redeemingCoupon = false;
+      return true;
+    } catch (error) {
+      console.error('Error processing coupon redemption:', error);
+      console.error('Stack:', error.stack);
+      await ctx.reply(
+        '❌ An error occurred while redeeming your coupon. Please try again or contact support.',
+        {
+          reply_markup: {
+            inline_keyboard: [[{ text: '🏠 Main Menu', callback_data: 'main_menu' }]]
+          }
+        }
+      );
+      ctx.session.redeemingCoupon = false;
+      return true;
     }
   }
 

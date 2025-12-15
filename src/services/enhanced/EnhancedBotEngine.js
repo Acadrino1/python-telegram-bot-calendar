@@ -626,6 +626,7 @@ class EnhancedBotEngine extends MemoryManager {
               inline_keyboard: [
                 [{ text: '📅 Book Appointment', callback_data: 'book' }],
                 [{ text: '📋 My Appointments', callback_data: 'my_appointments' }],
+                [{ text: '🎟️ Redeem Coupon', callback_data: 'redeem_coupon' }],
                 [{ text: '🎧 Support', callback_data: 'support_main' }]
               ]
             }
