@@ -17,10 +17,30 @@ class BookingService {
 
   /**
    * Book a new appointment with proper transaction handling
+   * SECURITY: Supports idempotency keys to prevent duplicate bookings
    */
-  async bookAppointment(bookingData) {
-    const trx = await transaction.start(Model.knex());
-    
+  async bookAppointment(bookingData, idempotencyKey = null) {
+    const knex = Model.knex();
+
+    // SECURITY: Check idempotency key for duplicate request prevention
+    if (idempotencyKey) {
+      const existing = await knex('booking_idempotency')
+        .where('idempotency_key', idempotencyKey)
+        .where('expires_at', '>', knex.fn.now())
+        .first();
+
+      if (existing) {
+        // Return cached response
+        return {
+          cached: true,
+          appointment: existing.appointment_id ? await Appointment.query().findById(existing.appointment_id) : null,
+          statusCode: existing.status_code
+        };
+      }
+    }
+
+    const trx = await transaction.start(knex);
+
     try {
       const {
         client_id,
@@ -133,14 +153,41 @@ class BookingService {
         datetime: appointment_datetime
       });
 
-      return {
+      const result = {
         success: true,
         message: 'Appointment booked successfully',
         appointment: fullAppointment
       };
 
+      // SECURITY: Store idempotency result (prevent duplicate bookings on retry)
+      if (idempotencyKey) {
+        const expiresAt = moment().add(24, 'hours').toDate();
+        await knex('booking_idempotency').insert({
+          idempotency_key: idempotencyKey,
+          appointment_id: appointment.id,
+          response_body: JSON.stringify(result),
+          status_code: 200,
+          expires_at: expiresAt
+        }).onConflict('idempotency_key').ignore();
+      }
+
+      return result;
+
     } catch (error) {
       await trx.rollback();
+
+      // SECURITY: Store failed idempotency result
+      if (idempotencyKey) {
+        const expiresAt = moment().add(24, 'hours').toDate();
+        await knex('booking_idempotency').insert({
+          idempotency_key: idempotencyKey,
+          appointment_id: null,
+          response_body: JSON.stringify({ error: error.message }),
+          status_code: 400,
+          expires_at: expiresAt
+        }).onConflict('idempotency_key').ignore();
+      }
+
       logger.error('Error booking appointment:', error);
       throw error;
     }

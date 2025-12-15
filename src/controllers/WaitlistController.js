@@ -317,20 +317,24 @@ class WaitlistController {
         });
       }
 
-      // Update status to cancelled
-      await WaitlistEntry.query()
-        .findById(entryId)
-        .patch({
-          status: 'cancelled',
-          updated_at: new Date()
-        });
+      // SECURITY: Wrap in transaction to atomically update position
+      const { transaction } = require('objection');
+      await transaction(WaitlistEntry.knex(), async (trx) => {
+        // Update status to cancelled
+        await WaitlistEntry.query(trx)
+          .findById(entryId)
+          .patch({
+            status: 'cancelled',
+            updated_at: new Date()
+          });
 
-      // Update positions for remaining entries
-      await WaitlistEntry.query()
-        .where('service_id', entry.service_id)
-        .where('position', '>', entry.position)
-        .where('status', 'active')
-        .decrement('position', 1);
+        // Update positions for remaining entries atomically
+        await WaitlistEntry.query(trx)
+          .where('service_id', entry.service_id)
+          .where('position', '>', entry.position)
+          .where('status', 'active')
+          .decrement('position', 1);
+      });
 
       res.json({
         message: 'Successfully removed from waitlist'

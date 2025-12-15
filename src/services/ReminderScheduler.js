@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const moment = require('moment-timezone');
 const Appointment = require('../models/Appointment');
+const knex = require('../config/database');
 
 class ReminderScheduler {
   constructor(bot) {
@@ -11,10 +12,15 @@ class ReminderScheduler {
 
   start() {
     console.log('🔔 Reminder Scheduler started');
-    
+
     // Check for upcoming appointments every minute
     cron.schedule('* * * * *', async () => {
       await this.checkAndScheduleReminders();
+    });
+
+    // SECURITY: Process cancellation queue every minute (DB-backed, survives restart)
+    cron.schedule('* * * * *', async () => {
+      await this.processCancellationQueue();
     });
 
     // Clean up old sent reminders daily
@@ -24,6 +30,7 @@ class ReminderScheduler {
 
     // Initial check on startup
     this.checkAndScheduleReminders();
+    this.processCancellationQueue();
   }
 
   async checkAndScheduleReminders() {
@@ -148,12 +155,15 @@ Please confirm that you will be available for your appointment.
             ]
           ]).reply_markup
         });
-        
-        // Schedule automatic cancellation in 10 minutes if not confirmed
-        setTimeout(async () => {
-          await this.checkAndCancelUnconfirmed(appointment);
-        }, 10 * 60 * 1000); // 10 minutes
-        
+
+        // SECURITY: Queue auto-cancel in DB (survives restart, no setTimeout)
+        const cancelAt = moment().tz('America/New_York').add(10, 'minutes').format('YYYY-MM-DD HH:mm:ss');
+        await knex('appointment_cancellation_queue').insert({
+          appointment_uuid: appointment.uuid,
+          cancel_at: cancelAt,
+          status: 'pending'
+        }).onConflict('appointment_uuid').ignore(); // Skip if already queued
+
         // Send notification to administrators
         await this.notifyAdminsOfUpcomingAppointment(appointment, displayTime, displayDate);
         
@@ -323,9 +333,10 @@ If not confirmed within 10 minutes, appointment will auto-cancel.`;
         .withGraphFetched('[client, service]');
       
       // If appointment requires confirmation but hasn't been confirmed
-      if (currentAppointment && 
-          currentAppointment.confirmation_required && 
-          !currentAppointment.confirmed &&
+      // SECURITY: Use confirmed_at instead of confirmed boolean for accurate state
+      if (currentAppointment &&
+          currentAppointment.confirmation_required &&
+          !currentAppointment.confirmed_at &&
           currentAppointment.status === 'scheduled') {
         
         // Cancel the appointment
@@ -371,16 +382,70 @@ Thank you for your understanding.`,
     }
   }
 
+  /**
+   * Process DB-backed cancellation queue (replaces setTimeout)
+   * SECURITY: Survives process restart, atomic operations
+   */
+  async processCancellationQueue() {
+    try {
+      const now = moment().tz('America/New_York').format('YYYY-MM-DD HH:mm:ss');
+
+      // Get all pending cancellations that are due
+      const pendingCancellations = await knex('appointment_cancellation_queue')
+        .where('status', 'pending')
+        .where('cancel_at', '<=', now);
+
+      for (const queued of pendingCancellations) {
+        try {
+          // Get appointment by UUID
+          const appointment = await Appointment.query()
+            .where('uuid', queued.appointment_uuid)
+            .withGraphFetched('[client, service]')
+            .first();
+
+          if (!appointment) {
+            // Appointment doesn't exist, mark as processed
+            await knex('appointment_cancellation_queue')
+              .where('id', queued.id)
+              .update({ status: 'cancelled' });
+            continue;
+          }
+
+          // Check if already confirmed or cancelled
+          if (appointment.status === 'confirmed' || appointment.status === 'cancelled') {
+            await knex('appointment_cancellation_queue')
+              .where('id', queued.id)
+              .update({ status: 'confirmed' });
+            continue;
+          }
+
+          // Cancel unconfirmed appointment
+          await this.checkAndCancelUnconfirmed(appointment);
+
+          // Mark as processed
+          await knex('appointment_cancellation_queue')
+            .where('id', queued.id)
+            .update({ status: 'cancelled' });
+
+        } catch (error) {
+          console.error(`Error processing cancellation for ${queued.appointment_uuid}:`, error);
+        }
+      }
+    } catch (error) {
+      console.error('Error processing cancellation queue:', error);
+    }
+  }
+
   cleanupOldReminders() {
     const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
-    
+
     // Remove reminders older than 24 hours
     for (const [key, timestamp] of this.sentReminders.entries()) {
       if (timestamp < oneDayAgo) {
         this.sentReminders.delete(key);
       }
     }
-    
+
     console.log('🧹 Cleaned up old reminder records');
   }
 
