@@ -28,7 +28,7 @@ class Coupon extends Model {
   }
 
   $beforeUpdate() {
-    this.updated_at = new Date().toISOString();
+    this.updated_at = moment().tz('America/New_York').format('YYYY-MM-DD HH:mm:ss');
   }
 
   /**
@@ -53,7 +53,7 @@ class Coupon extends Model {
    */
   static async createCoupon(amount, expiresInDays = 7) {
     const code = this.generateCode();
-    const expiresAt = moment().tz('America/New_York').add(expiresInDays, 'days').endOf('day').toISOString();
+    const expiresAt = moment().tz('America/New_York').add(expiresInDays, 'days').endOf('day').format('YYYY-MM-DD HH:mm:ss');
 
     return this.query().insert({
       code,
@@ -113,12 +113,13 @@ class Coupon extends Model {
     }
 
     const coupon = validation.coupon;
+    const now = moment().tz('America/New_York').format('YYYY-MM-DD HH:mm:ss');
 
     await this.query().where('id', coupon.id).patch({
       status: 'redeemed',
       redeemed_by_telegram_id: telegramId.toString(),
       redeemed_for_appointment_id: appointmentId,
-      redeemed_at: new Date().toISOString()
+      redeemed_at: now
     });
 
     return {
@@ -133,8 +134,9 @@ class Coupon extends Model {
    * Mark coupon as broadcast
    */
   static async markBroadcast(couponId, channelId) {
+    const now = moment().tz('America/New_York').format('YYYY-MM-DD HH:mm:ss');
     return this.query().where('id', couponId).patch({
-      broadcast_at: new Date().toISOString(),
+      broadcast_at: now,
       broadcast_channel_id: channelId
     });
   }
