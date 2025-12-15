@@ -63,9 +63,25 @@ class MoneroPayService {
    */
   cadToAtomicUnits(cadAmount, xmrRate) {
     if (!xmrRate || xmrRate <= 0) return null;
+
+    // SECURITY: Validate input ranges to prevent overflow
+    if (cadAmount < 0 || cadAmount > 1000000) {
+      throw new Error(`Invalid CAD amount: ${cadAmount} (must be 0-1,000,000)`);
+    }
+
+    if (xmrRate < 0.01 || xmrRate > 1000000) {
+      throw new Error(`Invalid XMR rate: ${xmrRate} (must be 0.01-1,000,000)`);
+    }
+
     const xmrAmount = cadAmount / xmrRate;
     // Convert to piconero (atomic units) - return as number for MoneroPay API
     const atomicUnits = Math.ceil(xmrAmount * 1e12);
+
+    // SECURITY: Bounds check on result to prevent overflow
+    if (!Number.isSafeInteger(atomicUnits) || atomicUnits < 0) {
+      throw new Error(`Conversion overflow: CAD ${cadAmount} at rate ${xmrRate}`);
+    }
+
     return atomicUnits;
   }
 
@@ -298,6 +314,23 @@ class MoneroPayService {
     if (!payment) {
       console.warn(`Webhook: Unknown payment address ${address}`);
       return null;
+    }
+
+    // SECURITY: Reject payments that have expired
+    const moment = require('moment-timezone');
+    const expiresAt = moment(payment.expires_at);
+    const now = moment();
+
+    if (now.isAfter(expiresAt)) {
+      console.warn(`Webhook: Payment ${payment.id} has expired (expires_at: ${payment.expires_at})`);
+      await this.updatePaymentStatus(payment.id, 'expired');
+      return {
+        paymentId: payment.id,
+        appointmentId: payment.appointment_id,
+        userId: payment.user_id,
+        status: 'expired',
+        error: 'Payment window expired'
+      };
     }
 
     let newStatus = payment.status;
