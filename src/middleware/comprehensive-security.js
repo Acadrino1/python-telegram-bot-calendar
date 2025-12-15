@@ -24,7 +24,9 @@ try {
 class ComprehensiveSecurity {
   constructor() {
     this.blockedTokens = ['TELEGRAM_BOT_TOKEN_PLACEHOLDER'];
-    this.testAdminIds = ['123456789', '000000000'];
+    // SECURITY: Only allow test admin IDs in test environment
+    this.testAdminIds = process.env.NODE_ENV === 'test' ? ['123456789'] : [];
+    this.unauthorizedAdmins = []; // Track admins who lost privileges
     this.suspiciousIPs = new Map();
     this.auditLog = [];
   }

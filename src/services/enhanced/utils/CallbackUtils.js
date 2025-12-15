@@ -151,17 +151,17 @@ function getPriorityEmoji(priority) {
 
 /**
  * Check if user is admin
+ * SECURITY: Uses consistent string comparison to prevent type coercion bypasses
  * @param {Object} ctx - Telegram context
  * @param {Array} adminIds - Array of admin IDs
  * @returns {boolean} - True if user is admin
  */
 function isAdmin(ctx, adminIds = []) {
   const ADMIN_ID = process.env.ADMIN_TELEGRAM_ID || process.env.ADMIN_USER_ID || '';
-  const adminIdNum = parseInt(ADMIN_ID);
+  const userIdStr = ctx.from.id.toString();
 
-  return adminIds.includes(ctx.from.id.toString()) ||
-    ctx.from.id.toString() === ADMIN_ID ||
-    (!isNaN(adminIdNum) && ctx.from.id === adminIdNum);
+  // SECURITY: Use consistent string comparison only (no type coercion)
+  return adminIds.includes(userIdStr) || userIdStr === ADMIN_ID;
 }
 
 /**

@@ -24,6 +24,15 @@ class WaitlistController {
 
       // Apply additional filters
       if (providerId) {
+        // SECURITY: Verify requester is admin or the provider themselves
+        if (req.user.role !== 'admin' && req.user.id.toString() !== providerId.toString()) {
+          logger.warn(`Unauthorized waitlist access attempt: user ${req.user.id} tried to access provider ${providerId} waitlist`);
+          return res.status(403).json({
+            success: false,
+            error: 'Unauthorized - you can only view your own waitlist'
+          });
+        }
+
         query = query
           .joinRelated('service')
           .where('service.provider_id', providerId);
