@@ -2582,10 +2582,22 @@ class AdminHandler {
       const budget = await CouponBudget.getRemainingBudget();
       const dropFrequency = await BotSettings.getCouponDropFrequency();
 
+      // Get redeemed coupon stats
+      const redeemedStats = await Coupon.query()
+        .where('status', 'redeemed')
+        .select(Coupon.raw('COUNT(*) as count, SUM(amount) as total'))
+        .first();
+
+      const totalRedeemed = parseInt(redeemedStats?.count) || 0;
+      const totalValue = parseFloat(redeemedStats?.total) || 0;
+
       let message = '*🎟️ Coupon Management*\n\n';
       message += `*Active Coupons:* ${activeCoupons}\n`;
       message += `*Weekly Budget Remaining:* $${budget}\n`;
       message += `*Auto-Drop Frequency:* ${dropFrequency}/day\n\n`;
+      message += `*📊 Redemption Stats:*\n`;
+      message += `├ Coupons Redeemed: ${totalRedeemed}\n`;
+      message += `└ Total Value Given: $${totalValue.toFixed(2)}\n\n`;
       message += '_Create and view discount coupons_\n\n';
       message += '_💡 To broadcast coupons, use 📢 Broadcast menu_';
 
