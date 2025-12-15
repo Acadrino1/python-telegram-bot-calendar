@@ -69,8 +69,8 @@ module.exports = {
   },
 
   production: {
-    client: 'mysql2',
-    connection: {
+    client: process.env.DB_CLIENT || 'sqlite3',
+    connection: process.env.DB_CLIENT === 'mysql2' ? {
       host: process.env.DB_HOST,
       port: process.env.DB_PORT || 3306,
       user: process.env.DB_USER,
@@ -82,7 +82,10 @@ module.exports = {
         cert: process.env.DB_SSL_CERT,  // Optional: Client cert
         key: process.env.DB_SSL_KEY  // Optional: Client key
       } : false
+    } : {
+      filename: process.env.DB_FILENAME || './database/lodge_scheduler.sqlite3'
     },
+    useNullAsDefault: process.env.DB_CLIENT !== 'mysql2',
     migrations: {
       directory: './database/migrations'
     },
