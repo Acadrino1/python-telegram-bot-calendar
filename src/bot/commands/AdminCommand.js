@@ -107,13 +107,18 @@ class AdminCommand {
         { text: '📢 Broadcast', callback_data: 'admin_broadcast' }
       ]);
 
-      // Row 4: Settings & Status
+      // Row 4: Coupons & Settings
       keyboard.push([
-        { text: '⚙️ Settings', callback_data: 'admin_settings' },
+        { text: '🎟️ Coupons', callback_data: 'admin_coupons' },
+        { text: '⚙️ Settings', callback_data: 'admin_settings' }
+      ]);
+
+      // Row 5: Bot Status
+      keyboard.push([
         { text: '📊 Status', callback_data: 'admin_bot_status' }
       ]);
 
-      // Row 5: Danger zone
+      // Row 6: Danger zone
       keyboard.push([
         { text: '🗑️ Cancel All', callback_data: 'admin_cancel_all_bookings' }
       ]);
