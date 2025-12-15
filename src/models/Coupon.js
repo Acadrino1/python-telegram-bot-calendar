@@ -137,10 +137,10 @@ class Coupon extends Model {
       return { valid: false, error: 'This coupon has expired' };
     }
 
-    const now = moment().tz('America/New_York');
+    const currentTime = moment().tz('America/New_York');
     const expiresAt = moment(coupon.expires_at).tz('America/New_York');
 
-    if (now.isAfter(expiresAt)) {
+    if (currentTime.isAfter(expiresAt)) {
       // Mark as expired
       await this.query().where('id', coupon.id).patch({ status: 'expired' });
       return { valid: false, error: 'This coupon has expired' };

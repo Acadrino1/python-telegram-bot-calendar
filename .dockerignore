@@ -17,6 +17,6 @@ devops
 docs
 logs
 *.log
+# Only exclude SQLite databases, not the entire database folder
 *.sqlite3
 *.sqlite
-database/*.sqlite3
