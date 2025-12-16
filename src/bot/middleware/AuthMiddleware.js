@@ -98,6 +98,13 @@ class AuthMiddleware {
         .first()
         .catch(() => null);
 
+      // If user exists but is pending and using /start, re-notify admin (handles DB resets)
+      const isStartCommand = ctx.message?.text?.startsWith('/start');
+      if (user && user.approval_status === 'pending' && isStartCommand) {
+        console.log(`Existing pending user ${telegramId} - re-notifying admin`);
+        await this.notifyAdminOfNewRequest(ctx, user);
+      }
+
       if (!user) {
         // Check if user has a username before allowing registration
         if (!ctx.from.username) {
