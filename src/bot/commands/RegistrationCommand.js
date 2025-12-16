@@ -116,16 +116,29 @@ Please try these commands or contact support if issues persist.`;
 
   async handleRequestAccess(ctx) {
     try {
+      const args = ctx.message.text.split(' ');
+      const forceResend = args[1]?.toLowerCase() === 'resend';
+
       let user = await this.getUser(ctx.from.id);
       if (!user) {
         user = await this.registerUser(ctx);
       }
-      
+
       if (user.isApproved()) {
         return await ctx.reply('You already have access to the bot. Use /book to schedule appointments.');
       }
-      
+
       if (user.isPending()) {
+        // Force resend notification to admin
+        if (forceResend) {
+          await this.notifyAdminNewRequest(user);
+          return await ctx.replyWithMarkdown(
+            `✅ *Request Re-sent!*\n\n` +
+            `Your access request has been re-sent to the admin.\n\n` +
+            `Please wait for approval. You'll be notified when approved.`
+          );
+        }
+
         const requestMessage = `
 🕐 *Access Request Status: PENDING*
 
@@ -141,16 +154,17 @@ Your request is currently pending admin review.
 • Wait for admin approval
 • You'll be notified when approved
 • Use /invite [code] if you have a referral code
+• Use /request resend to re-send your request
 
 Thank you for your patience!`;
-        
+
         return await ctx.replyWithMarkdown(requestMessage);
       }
-      
+
       if (user.isDenied()) {
         return await ctx.reply('Your access request has been denied. Please contact support if you believe this is an error.');
       }
-      
+
     } catch (error) {
       console.error('Request command error:', error);
       await ctx.reply('Sorry, I couldn\'t process your request. Please try again.');
