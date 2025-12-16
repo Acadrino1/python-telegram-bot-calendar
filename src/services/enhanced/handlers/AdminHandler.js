@@ -1815,7 +1815,7 @@ class AdminHandler {
         return true;
       }
 
-      if (user.approval_status === 'rejected') {
+      if (user.approval_status === 'denied') {
         await ctx.editMessageText(
           `❌ User ${telegramId} was already denied.`,
           { reply_markup: { inline_keyboard: [[{ text: '🏠 Admin Panel', callback_data: 'admin_panel' }]] } }
@@ -1823,14 +1823,14 @@ class AdminHandler {
         return true;
       }
 
-      // Deny the user
+      // Deny the user - use 'denied' to match DB enum and User model
       await User.query()
         .where('telegram_id', telegramId)
         .patch({
-          approval_status: 'rejected',
+          approval_status: 'denied',
           is_active: false,
-          rejected_at: new Date(),
-          rejected_by: ctx.from.id.toString()
+          approved_at: null,
+          approved_by: ctx.from.id.toString()
         });
 
       const rawName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown';
