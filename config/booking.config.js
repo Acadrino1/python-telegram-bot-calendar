@@ -27,6 +27,8 @@ module.exports = {
   notifications: {
     // Telegram group ID for notifications (needs to be set)
     groupChatId: process.env.TELEGRAM_GROUP_ID || null,
+    // Topic ID for forum groups (messages only go to this topic)
+    topicId: process.env.TELEGRAM_GROUP_TOPIC_ID ? parseInt(process.env.TELEGRAM_GROUP_TOPIC_ID) : null,
     
     // Notification templates
     templates: {

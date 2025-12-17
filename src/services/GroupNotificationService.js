@@ -7,6 +7,16 @@ class GroupNotificationService {
     this.bot = bot;
     this.config = bookingConfig.notifications;
     this.groupChatId = this.config.groupChatId;
+    this.topicId = this.config.topicId;
+  }
+
+  // Build send options with topic support
+  getSendOptions() {
+    const options = { parse_mode: 'Markdown' };
+    if (this.topicId) {
+      options.message_thread_id = this.topicId;
+    }
+    return options;
   }
 
   async notifyNewBooking(booking, customer, service) {
@@ -31,9 +41,7 @@ class GroupNotificationService {
         .replace('{slotNumber}', dayBookings.length)
         .replace('{maxSlots}', bookingConfig.bookingLimits.maxSlotsPerDay);
 
-      await this.bot.telegram.sendMessage(this.groupChatId, message, {
-        parse_mode: 'Markdown'
-      });
+      await this.bot.telegram.sendMessage(this.groupChatId, message, this.getSendOptions());
 
       // If daily limit reached, send additional alert
       if (dayBookings.length >= bookingConfig.bookingLimits.maxSlotsPerDay) {
@@ -59,9 +67,7 @@ class GroupNotificationService {
         .replace('{date}', dateTime.format('MMM DD, YYYY'))
         .replace('{time}', dateTime.format('h:mm A z'));
 
-      await this.bot.telegram.sendMessage(this.groupChatId, message, {
-        parse_mode: 'Markdown'
-      });
+      await this.bot.telegram.sendMessage(this.groupChatId, message, this.getSendOptions());
     } catch (error) {
       console.error('Failed to send cancellation notification:', error);
     }
@@ -78,9 +84,7 @@ class GroupNotificationService {
       const message = this.config.templates.dailyLimit
         .replace('{date}', formattedDate);
 
-      await this.bot.telegram.sendMessage(this.groupChatId, message, {
-        parse_mode: 'Markdown'
-      });
+      await this.bot.telegram.sendMessage(this.groupChatId, message, this.getSendOptions());
     } catch (error) {
       console.error('Failed to send daily limit notification:', error);
     }
@@ -112,9 +116,7 @@ class GroupNotificationService {
       
       message += `⏰ Business Hours: ${slotService.getBusinessHoursDisplay().full}`;
 
-      await this.bot.telegram.sendMessage(this.groupChatId, message, {
-        parse_mode: 'Markdown'
-      });
+      await this.bot.telegram.sendMessage(this.groupChatId, message, this.getSendOptions());
     } catch (error) {
       console.error('Failed to send daily summary:', error);
     }
