@@ -206,6 +206,12 @@ class AdminHandler {
     if (callbackData === 'admin_broadcast_cancel') {
       return await this.showAdminPanel(ctx);
     }
+    if (callbackData === 'admin_broadcast_dest_topic') {
+      return await this.handleBroadcastDestSelect(ctx, true);
+    }
+    if (callbackData === 'admin_broadcast_dest_main') {
+      return await this.handleBroadcastDestSelect(ctx, false);
+    }
 
     // Handle preset coupon amounts
     if (callbackData.startsWith('broadcast_coupon_')) {
@@ -1939,33 +1945,86 @@ class AdminHandler {
     try {
       ctx.session = ctx.session || {};
       ctx.session.adminBroadcast = {
-        awaiting: true,
+        awaiting: false,
         target: target // 'users', 'channels', or 'all'
       };
 
-      const targetLabel = target === 'users' ? 'users' :
-                          target === 'channels' ? 'groups/channels' : 'everyone';
+      // If targeting channels, ask about topic vs main chat
+      if (target === 'channels' || target === 'all') {
+        const message = `📢 *Broadcast Destination*\n\n` +
+          `Where should the message go in groups?\n\n` +
+          `📌 *Topic Only* - Send to designated topic thread\n` +
+          `💬 *Main Chat* - Send to main group chat`;
 
-      const message = `📢 *Broadcast to ${targetLabel}*\n\n` +
-        `Type the message you want to send.\n\n` +
-        `You can use *bold*, _italic_, and \`code\` formatting.`;
+        await ctx.editMessageText(message, {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '📌 Topic Only', callback_data: 'admin_broadcast_dest_topic' }],
+              [{ text: '💬 Main Chat', callback_data: 'admin_broadcast_dest_main' }],
+              [{ text: '← Back', callback_data: 'admin_broadcast' }],
+              [{ text: '❌ Cancel', callback_data: 'admin_panel' }]
+            ]
+          }
+        });
+        return true;
+      }
 
-      await ctx.editMessageText(message, {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '← Back', callback_data: 'admin_broadcast' }],
-            [{ text: '❌ Cancel', callback_data: 'admin_panel' }]
-          ]
-        }
-      });
-      return true;
+      // Users only - skip destination choice
+      return this.promptBroadcastMessage(ctx, target);
 
     } catch (error) {
       console.error('Error in broadcast target select:', error);
       await ctx.reply('❌ Error. Please try again.');
       return true;
     }
+  }
+
+  /**
+   * Handle broadcast destination selection (topic vs main chat)
+   */
+  async handleBroadcastDestSelect(ctx, useTopic) {
+    try {
+      ctx.session = ctx.session || {};
+      ctx.session.adminBroadcast = ctx.session.adminBroadcast || {};
+      ctx.session.adminBroadcast.useTopic = useTopic;
+
+      const target = ctx.session.adminBroadcast.target || 'channels';
+      return this.promptBroadcastMessage(ctx, target);
+
+    } catch (error) {
+      console.error('Error in broadcast dest select:', error);
+      await ctx.reply('❌ Error. Please try again.');
+      return true;
+    }
+  }
+
+  /**
+   * Prompt admin to enter broadcast message
+   */
+  async promptBroadcastMessage(ctx, target) {
+    ctx.session.adminBroadcast.awaiting = true;
+
+    const targetLabel = target === 'users' ? 'users' :
+                        target === 'channels' ? 'groups/channels' : 'everyone';
+
+    const destNote = ctx.session.adminBroadcast.useTopic === true ? ' (topic only)' :
+                     ctx.session.adminBroadcast.useTopic === false ? ' (main chat)' : '';
+
+    const message = `📢 *Broadcast to ${targetLabel}${destNote}*\n\n` +
+      `Type the message you want to send.\n\n` +
+      `You can use *bold*, _italic_, and \`code\` formatting.`;
+
+    await ctx.editMessageText(message, {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '← Back', callback_data: 'admin_broadcast' }],
+          [{ text: '❌ Cancel', callback_data: 'admin_panel' }]
+        ]
+      }
+    });
+    return true;
   }
 
   /**
@@ -2020,10 +2079,17 @@ class AdminHandler {
 
         for (const channel of channels) {
           try {
+            const sendOptions = { parse_mode: 'Markdown' };
+
+            // Add topic_id if useTopic is true and channel has topic
+            if (broadcastData.useTopic && channel.topic_id) {
+              sendOptions.message_thread_id = channel.topic_id;
+            }
+
             await this.bot.telegram.sendMessage(
               channel.chat_id,
               `📢 *Announcement*\n\n${broadcastData.message}`,
-              { parse_mode: 'Markdown' }
+              sendOptions
             );
             channelsSent++;
           } catch (e) {
@@ -2636,6 +2702,12 @@ class AdminHandler {
     if (callbackData === 'admin_coupon_broadcast') {
       return await this.handleBroadcastCoupon(ctx);
     }
+    if (callbackData === 'coupon_dest_topic') {
+      return await this.handleCouponDestSelect(ctx, true);
+    }
+    if (callbackData === 'coupon_dest_main') {
+      return await this.handleCouponDestSelect(ctx, false);
+    }
     if (callbackData === 'admin_coupon_list') {
       return await this.handleListCoupons(ctx);
     }
@@ -2666,17 +2738,51 @@ class AdminHandler {
   }
 
   /**
-   * Broadcast a coupon to public group
+   * Broadcast a coupon - first ask destination
    */
   async handleBroadcastCoupon(ctx) {
     try {
       console.log('📢 handleBroadcastCoupon called');
       await ctx.answerCbQuery();
-      ctx.session.broadcastingCoupon = true;
-      console.log('📢 Session flag set, sending prompt');
 
-      await ctx.reply(
-        '*Broadcast Coupon*\n\n' +
+      const message = `🎁 *Broadcast Coupon*\n\n` +
+        `Where should the coupon go?\n\n` +
+        `📌 *Topic Only* - Post to designated topic\n` +
+        `💬 *Main Chat* - Post to main group chat`;
+
+      await ctx.reply(message, {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '📌 Topic Only', callback_data: 'coupon_dest_topic' }],
+            [{ text: '💬 Main Chat', callback_data: 'coupon_dest_main' }],
+            [{ text: '❌ Cancel', callback_data: 'admin_coupons' }]
+          ]
+        }
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Error broadcasting coupon:', error);
+      await ctx.answerCbQuery('Error');
+      return true;
+    }
+  }
+
+  /**
+   * Handle coupon destination selection then show amounts
+   */
+  async handleCouponDestSelect(ctx, useTopic) {
+    try {
+      await ctx.answerCbQuery();
+      ctx.session = ctx.session || {};
+      ctx.session.couponUseTopic = useTopic;
+      ctx.session.broadcastingCoupon = true;
+
+      const destLabel = useTopic ? '(topic only)' : '(main chat)';
+
+      await ctx.editMessageText(
+        `*Broadcast Coupon ${destLabel}*\n\n` +
         'Select a preset amount or enter custom value:\n\n' +
         '_Or type custom amount (e.g., 25)_',
         {
@@ -2698,17 +2804,9 @@ class AdminHandler {
         }
       );
 
-      console.log('📢 Prompt sent, awaiting amount input');
       return true;
     } catch (error) {
-      console.error('Error broadcasting coupon:', error);
-      console.error('Stack:', error.stack);
-      console.error('Full error details:', {
-        message: error.message,
-        name: error.name,
-        code: error.code,
-        stack: error.stack
-      });
+      console.error('Error in coupon dest select:', error);
       await ctx.answerCbQuery('Error');
       return true;
     }
@@ -2720,7 +2818,9 @@ class AdminHandler {
   async handleBroadcastCouponPreset(ctx, amount) {
     try {
       await ctx.answerCbQuery();
+      const useTopic = ctx.session?.couponUseTopic;
       delete ctx.session.broadcastingCoupon;
+      delete ctx.session.couponUseTopic;
 
       console.log(`📢 Broadcasting preset $${amount} coupon...`);
       const Coupon = require('../../../models/Coupon');
@@ -2757,7 +2857,8 @@ class AdminHandler {
               ]]
             }
           };
-          if (channel.topic_id) {
+          // Use topic if admin chose topic and channel has one
+          if (useTopic && channel.topic_id) {
             options.message_thread_id = channel.topic_id;
           }
 
