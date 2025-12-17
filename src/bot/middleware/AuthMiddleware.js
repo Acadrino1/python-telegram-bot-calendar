@@ -46,7 +46,11 @@ class AuthMiddleware {
         // Get or create user
         const user = await this.getOrRegisterUser(ctx);
         if (!user) {
-          return ctx.reply('Authentication failed. Please try /start to register.');
+          // Only send auth failure to private chats, never groups
+          if (ctx.chat?.type === 'private') {
+            return ctx.reply('Authentication failed. Please try /start to register.');
+          }
+          return; // Silently ignore in groups
         }
 
         // Attach user to context for other handlers
@@ -65,7 +69,11 @@ class AuthMiddleware {
         // Check admin permissions
         if (this.requiresAdmin(ctx)) {
           if (!this.isAdmin(userId)) {
-            return ctx.reply('❌ This command requires administrator privileges.');
+            // Only reply in private chats
+            if (ctx.chat?.type === 'private') {
+              return ctx.reply('❌ This command requires administrator privileges.');
+            }
+            return;
           }
         }
 
@@ -73,7 +81,10 @@ class AuthMiddleware {
         return next();
       } catch (error) {
         console.error('Auth middleware error:', error);
-        await ctx.reply('Authentication error occurred. Please try again.');
+        // Only reply in private chats, never groups
+        if (ctx.chat?.type === 'private') {
+          await ctx.reply('Authentication error occurred. Please try again.');
+        }
       }
     };
   }
@@ -108,16 +119,19 @@ class AuthMiddleware {
       if (!user) {
         // Check if user has a username before allowing registration
         if (!ctx.from.username) {
-          await ctx.replyWithMarkdown(
-            `⚠️ *Username Required*\n\n` +
-            `To use this bot, you must have a Telegram username set.\n\n` +
-            `*How to set your username:*\n` +
-            `1. Go to Telegram Settings\n` +
-            `2. Tap on your profile\n` +
-            `3. Set a username\n` +
-            `4. Return here and tap /start\n\n` +
-            `_A username helps us identify and serve you better._`
-          );
+          // Only send to private chats
+          if (ctx.chat?.type === 'private') {
+            await ctx.replyWithMarkdown(
+              `⚠️ *Username Required*\n\n` +
+              `To use this bot, you must have a Telegram username set.\n\n` +
+              `*How to set your username:*\n` +
+              `1. Go to Telegram Settings\n` +
+              `2. Tap on your profile\n` +
+              `3. Set a username\n` +
+              `4. Return here and tap /start\n\n` +
+              `_A username helps us identify and serve you better._`
+            );
+          }
           return null;
         }
 
@@ -128,11 +142,14 @@ class AuthMiddleware {
 
         if (hasChinese || hasRussian) {
           console.log(`Blocked user ${telegramId}: non-Latin characters in name`);
-          await ctx.replyWithMarkdown(
-            `🚫 *Registration Unavailable*\n\n` +
-            `This service is not available in your region.\n\n` +
-            `_We apologize for any inconvenience._`
-          );
+          // Only send to private chats
+          if (ctx.chat?.type === 'private') {
+            await ctx.replyWithMarkdown(
+              `🚫 *Registration Unavailable*\n\n` +
+              `This service is not available in your region.\n\n` +
+              `_We apologize for any inconvenience._`
+            );
+          }
           return null;
         }
 
