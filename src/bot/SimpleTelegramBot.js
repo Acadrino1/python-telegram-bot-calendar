@@ -148,9 +148,8 @@ class SimpleTelegramBot {
       // Start the bot engine
       await this.botEngine.start();
 
-      // Start the coupon giveaway service
+      // Initialize coupon giveaway service (admin-triggered only, no auto-scheduling)
       this.couponGiveawayService = new CouponGiveawayService(this.bot);
-      this.couponGiveawayService.start();
       this.services.couponGiveawayService = this.couponGiveawayService;
 
       console.log('🤖 SimpleTelegramBot started successfully with modular architecture!');

@@ -1,11 +1,10 @@
 /**
  * Coupon Giveaway Service
  *
- * Manages daily coupon drops to channels during business hours:
- * - Once per day, at a random time during business hours
+ * Admin-triggered coupon drops to channels:
  * - $20 or $25 coupons
  * - $100 weekly budget limit
- * - Only during operational hours (11:00 AM - 8:00 PM, Mon-Sat)
+ * - Manual trigger only via admin command
  */
 
 const moment = require('moment-timezone');
@@ -17,158 +16,10 @@ class CouponGiveawayService {
   constructor(bot) {
     this.bot = bot;
     this.timezone = 'America/New_York';
-    this.businessHours = {
-      start: 11, // 11:00 AM
-      end: 20,   // 8:00 PM
-      days: [1, 2, 3, 4, 5, 6] // Monday - Saturday (moment.js: 1=Mon, 7=Sun)
-    };
-    this.checkInterval = null;
-    this.scheduledDrop = null;
-    this.todayDropped = false;
   }
 
   /**
-   * Start the giveaway scheduler
-   */
-  start() {
-    console.log('🎁 Starting Coupon Giveaway Service...');
-
-    // Schedule today's drop if within business hours
-    this.scheduleNextDrop();
-
-    // Check every 5 minutes if we need to drop a coupon
-    this.checkInterval = setInterval(() => {
-      this.checkAndExecuteDrop();
-    }, 5 * 60 * 1000);
-
-    // Also check immediately on start
-    this.checkAndExecuteDrop();
-
-    console.log('🎁 Coupon Giveaway Service started');
-  }
-
-  /**
-   * Stop the scheduler
-   */
-  stop() {
-    if (this.checkInterval) {
-      clearInterval(this.checkInterval);
-      this.checkInterval = null;
-    }
-    console.log('🎁 Coupon Giveaway Service stopped');
-  }
-
-  /**
-   * Check if current time is within business hours
-   */
-  isBusinessHours() {
-    const now = moment().tz(this.timezone);
-    const dayOfWeek = now.isoWeekday(); // 1=Mon, 7=Sun
-    const hour = now.hour();
-
-    const isBusinessDay = this.businessHours.days.includes(dayOfWeek);
-    const isBusinessTime = hour >= this.businessHours.start && hour < this.businessHours.end;
-
-    return isBusinessDay && isBusinessTime;
-  }
-
-  /**
-   * Generate a random time within today's remaining business hours
-   */
-  getRandomDropTime() {
-    const now = moment().tz(this.timezone);
-    const currentHour = now.hour();
-    const currentMinute = now.minute();
-
-    // If we're before business hours, pick random time in full range
-    let startHour = this.businessHours.start;
-    let startMinute = 0;
-
-    // If we're already in business hours, start from now
-    if (currentHour >= this.businessHours.start && currentHour < this.businessHours.end) {
-      startHour = currentHour;
-      startMinute = currentMinute + 5; // At least 5 minutes from now
-    }
-
-    // Calculate available minutes until end of business
-    const endMinutes = this.businessHours.end * 60;
-    const startMinutes = startHour * 60 + startMinute;
-
-    if (startMinutes >= endMinutes - 10) {
-      return null; // Not enough time left today
-    }
-
-    // Pick random minute within range
-    const randomMinute = startMinutes + Math.floor(Math.random() * (endMinutes - startMinutes - 5));
-    const dropHour = Math.floor(randomMinute / 60);
-    const dropMin = randomMinute % 60;
-
-    return moment().tz(this.timezone).hour(dropHour).minute(dropMin).second(0);
-  }
-
-  /**
-   * Schedule the next coupon drop
-   */
-  scheduleNextDrop() {
-    const now = moment().tz(this.timezone);
-    const dayOfWeek = now.isoWeekday();
-
-    // Reset daily flag at midnight
-    if (now.hour() === 0 && now.minute() < 5) {
-      this.todayDropped = false;
-    }
-
-    // Check if today is a business day and we haven't dropped yet
-    if (!this.businessHours.days.includes(dayOfWeek)) {
-      console.log('🎁 Today is not a business day, no coupon drop scheduled');
-      return;
-    }
-
-    if (this.todayDropped) {
-      console.log('🎁 Already dropped coupon today');
-      return;
-    }
-
-    // If we're past business hours, wait for tomorrow
-    if (now.hour() >= this.businessHours.end) {
-      console.log('🎁 Past business hours, will schedule tomorrow');
-      return;
-    }
-
-    // Generate random drop time for today
-    const dropTime = this.getRandomDropTime();
-    if (!dropTime) {
-      console.log('🎁 Not enough time left today for coupon drop');
-      return;
-    }
-
-    this.scheduledDrop = dropTime;
-    console.log(`🎁 Coupon drop scheduled for today at ${dropTime.format('h:mm A')}`);
-  }
-
-  /**
-   * Check if it's time to drop a coupon and execute
-   */
-  async checkAndExecuteDrop() {
-    if (this.todayDropped) return;
-    if (!this.scheduledDrop) {
-      this.scheduleNextDrop();
-      return;
-    }
-
-    const now = moment().tz(this.timezone);
-
-    // Check if it's time (within 5 minute window)
-    if (now.isSameOrAfter(this.scheduledDrop)) {
-      console.log('🎁 Executing scheduled coupon drop...');
-      await this.dropCoupon();
-      this.todayDropped = true;
-      this.scheduledDrop = null;
-    }
-  }
-
-  /**
-   * Drop a coupon to all broadcast channels
+   * Drop a coupon to all broadcast channels (admin-triggered only)
    */
   async dropCoupon() {
     try {
@@ -292,11 +143,8 @@ class CouponGiveawayService {
     const now = moment().tz(this.timezone);
 
     return {
-      running: !!this.checkInterval,
-      isBusinessHours: this.isBusinessHours(),
+      mode: 'admin-triggered',
       currentTime: now.format('h:mm A'),
-      todayDropped: this.todayDropped,
-      scheduledDrop: this.scheduledDrop ? this.scheduledDrop.format('h:mm A') : 'None',
       weeklyStats: stats
     };
   }
